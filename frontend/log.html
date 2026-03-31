@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Workout - FitLog</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">FitLog</span>
+        </div>
+        <div class="nav-links">
+            <a href="./index.html">Dashboard</a>
+            <a href="./log.html" class="active">Log Workout</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <a href="./index.html" class="back-link">← Back to Dashboard</a>
+
+        <header class="page-header">
+            <h1>Log Workout</h1>
+            <p class="subtitle">Record your set and track progress</p>
+        </header>
+
+        <div id="alert-container"></div>
+
+        <form id="workout-form" class="form-section">
+            <div class="form-group">
+                <label class="form-label" for="exercise">Exercise</label>
+                <select id="exercise" class="form-control" required>
+                    <option value="">Select exercise...</option>
+                    <option value="bench_press">Bench Press</option>
+                    <option value="squat">Squat</option>
+                    <option value="deadlift">Deadlift</option>
+                    <option value="overhead_press">Overhead Press</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="weight">Weight</label>
+                <div class="input-group">
+                    <input type="number" id="weight" class="form-control" placeholder="185" min="0" step="5" required>
+                    <span class="input-suffix">lbs</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="reps">Reps</label>
+                <input type="number" id="reps" class="form-control" placeholder="5" min="1" max="50" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="date">Date</label>
+                <input type="date" id="date" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="notes">Notes (optional)</label>
+                <input type="text" id="notes" class="form-control" placeholder="Felt strong today...">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-large" style="width: 100%;">Log Set</button>
+        </form>
+
+        <!-- Estimated 1RM Preview -->
+        <div id="estimate-preview" class="form-section" style="display: none;">
+            <h3 style="margin-bottom: 0.5rem;">Estimated 1RM</h3>
+            <p class="subtitle" style="margin-bottom: 1rem;">Based on Epley formula</p>
+            <div style="text-align: center;">
+                <span id="estimated-1rm" class="stat-value">--</span>
+                <span class="stat-unit">lbs</span>
+            </div>
+        </div>
+
+        <!-- Recent Sets -->
+        <div class="form-section">
+            <h3 style="margin-bottom: 1rem;">Recent Sets</h3>
+            <div id="recent-loading" class="loading">Loading...</div>
+            <table id="recent-table" class="history-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Exercise</th>
+                        <th>Weight</th>
+                        <th>Reps</th>
+                        <th>Est. 1RM</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-tbody"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="./api.js"></script>
+    <script>
+        // Set default date to today
+        document.getElementById('date').valueAsDate = new Date();
+
+        // Calculate and show estimated 1RM as user types
+        const weightInput = document.getElementById('weight');
+        const repsInput = document.getElementById('reps');
+        const estimatePreview = document.getElementById('estimate-preview');
+        const estimatedValue = document.getElementById('estimated-1rm');
+
+        function updateEstimate() {
+            const weight = parseFloat(weightInput.value);
+            const reps = parseInt(repsInput.value);
+
+            if (weight > 0 && reps > 0) {
+                const est1rm = epley1RM(weight, reps);
+                estimatedValue.textContent = est1rm;
+                estimatePreview.style.display = 'block';
+            } else {
+                estimatePreview.style.display = 'none';
+            }
+        }
+
+        weightInput.addEventListener('input', updateEstimate);
+        repsInput.addEventListener('input', updateEstimate);
+
+        // Load recent sets
+        async function loadRecentSets() {
+            try {
+                const data = await FITLOG_API.getWorkouts(null, 10);
+                const tbody = document.getElementById('recent-tbody');
+
+                tbody.innerHTML = data.records.map(w => `
+                    <tr>
+                        <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
+                        <td>${w.weight.trim()} lbs</td>
+                        <td>${w.reps.trim()}</td>
+                        <td>${w.estimated_1rm.trim()} lbs</td>
+                    </tr>
+                `).join('');
+
+                document.getElementById('recent-loading').style.display = 'none';
+                document.getElementById('recent-table').style.display = 'table';
+            } catch (error) {
+                console.error('Error loading recent sets:', error);
+                document.getElementById('recent-loading').textContent = 'Error loading data';
+            }
+        }
+
+        // Form submission
+        document.getElementById('workout-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const alertContainer = document.getElementById('alert-container');
+            const exercise = document.getElementById('exercise').value;
+            const weight = document.getElementById('weight').value;
+            const reps = document.getElementById('reps').value;
+            const date = document.getElementById('date').value;
+            const notes = document.getElementById('notes').value;
+
+            // Calculate day number (days since Jan 1, 2026)
+            const startDate = new Date('2026-01-01');
+            const workoutDate = new Date(date);
+            const dayNumber = Math.floor((workoutDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+            // Calculate estimated 1RM
+            const est1rm = epley1RM(parseFloat(weight), parseInt(reps));
+
+            // Generate workout ID
+            const workoutId = Date.now().toString().slice(-12).padStart(12, '0');
+
+            // Prepare record
+            const record = {
+                workout_id: workoutId,
+                exercise: exercise,
+                weight: weight,
+                reps: reps,
+                date: date,
+                day_number: String(dayNumber),
+                estimated_1rm: String(est1rm),
+                notes: notes || ''
+            };
+
+            // Insert the record via Chaprola API
+            try {
+                const result = await FITLOG_API.insertRecord('workouts', record);
+
+                if (result.status === 'ok') {
+                    alertContainer.innerHTML = `
+                        <div class="alert alert-success">
+                            <strong>Set logged successfully!</strong><br>
+                            ${EXERCISES[exercise]?.name}: ${weight} lbs x ${reps} reps (Est. 1RM: ${est1rm} lbs)
+                            <br><small>Day ${dayNumber} - ${date}</small>
+                        </div>
+                    `;
+
+                    // Reset form
+                    document.getElementById('exercise').value = '';
+                    document.getElementById('weight').value = '';
+                    document.getElementById('reps').value = '';
+                    document.getElementById('notes').value = '';
+                    estimatePreview.style.display = 'none';
+
+                    // Reload recent sets
+                    loadRecentSets();
+                } else {
+                    throw new Error(result.message || 'Failed to log workout');
+                }
+            } catch (error) {
+                alertContainer.innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error logging workout:</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+
+            // Scroll to top to show alert
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        loadRecentSets();
+    </script>
+</body>
+</html>

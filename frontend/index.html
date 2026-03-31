@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitLog - Dashboard</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">FitLog</span>
+        </div>
+        <div class="nav-links">
+            <a href="./index.html" class="active">Dashboard</a>
+            <a href="./log.html">Log Workout</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <header class="page-header">
+            <h1>Your Progress</h1>
+            <p class="subtitle">Powered by HULDRA optimization</p>
+        </header>
+
+        <section class="overview-section">
+            <div id="overview-loading" class="loading">Loading dashboard...</div>
+            <div id="overview-grid" class="exercise-grid" style="display: none;"></div>
+        </section>
+
+        <section class="quick-actions">
+            <a href="./log.html" class="btn btn-primary btn-large">Log New Workout</a>
+        </section>
+    </main>
+
+    <script src="./api.js"></script>
+    <script>
+        const API_BASE = 'https://api.chaprola.org';
+        const USERID = 'chaprola-fitlog';
+        const PROJECT = 'fitlog';
+
+        const exercises = [
+            { id: 'bench_press', name: 'Bench Press', icon: '🏋️' },
+            { id: 'squat', name: 'Squat', icon: '🦵' },
+            { id: 'deadlift', name: 'Deadlift', icon: '💪' },
+            { id: 'overhead_press', name: 'Overhead Press', icon: '🙌' }
+        ];
+
+        async function loadDashboard() {
+            try {
+                // Fetch models data
+                const modelsResponse = await fetch(`${API_BASE}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userid: USERID,
+                        project: PROJECT,
+                        file: 'models'
+                    })
+                });
+                const modelsData = await modelsResponse.json();
+
+                // Fetch recent workouts for each exercise
+                const workoutsResponse = await fetch(`${API_BASE}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userid: USERID,
+                        project: PROJECT,
+                        file: 'workouts',
+                        order_by: [{ field: 'day_number', dir: 'desc' }],
+                        limit: 100
+                    })
+                });
+                const workoutsData = await workoutsResponse.json();
+
+                renderDashboard(modelsData.records, workoutsData.records);
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('overview-loading').textContent = 'Error loading data';
+            }
+        }
+
+        function renderDashboard(models, workouts) {
+            const grid = document.getElementById('overview-grid');
+            const loading = document.getElementById('overview-loading');
+
+            // Group workouts by exercise
+            const workoutsByExercise = {};
+            workouts.forEach(w => {
+                const ex = w.exercise.trim();
+                if (!workoutsByExercise[ex]) workoutsByExercise[ex] = [];
+                workoutsByExercise[ex].push(w);
+            });
+
+            // Create model lookup
+            const modelLookup = {};
+            models.forEach(m => {
+                modelLookup[m.exercise.trim()] = m;
+            });
+
+            grid.innerHTML = exercises.map(ex => {
+                const model = modelLookup[ex.id];
+                const recentWorkouts = workoutsByExercise[ex.id] || [];
+                const latestWorkout = recentWorkouts[0];
+
+                if (!model) return '';
+
+                const slope = parseFloat(model.param_a) || 0;
+                const base = parseFloat(model.param_b) || 0;
+                const currentDay = 38; // Approximate current day
+                const current1RM = (slope * currentDay + base).toFixed(0);
+                const projected30 = (slope * (currentDay + 30) + base).toFixed(0);
+                const weeklyGain = (slope * 7).toFixed(1);
+
+                return `
+                    <a href="./exercise.html?name=${ex.id}" class="exercise-card">
+                        <div class="card-header">
+                            <span class="exercise-icon">${ex.icon}</span>
+                            <h2>${ex.name}</h2>
+                        </div>
+                        <div class="card-stats">
+                            <div class="stat-primary">
+                                <span class="stat-value">${current1RM}</span>
+                                <span class="stat-unit">lbs</span>
+                                <span class="stat-label">Est. 1RM</span>
+                            </div>
+                            <div class="stat-secondary">
+                                <div class="stat-item">
+                                    <span class="stat-value-sm">+${weeklyGain}</span>
+                                    <span class="stat-label-sm">lbs/week</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value-sm">${projected30}</span>
+                                    <span class="stat-label-sm">30-day proj.</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="last-workout">
+                                ${latestWorkout ? `Last: ${latestWorkout.weight}lbs x ${latestWorkout.reps}` : 'No workouts yet'}
+                            </span>
+                            <span class="view-details">View Details →</span>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+
+            loading.style.display = 'none';
+            grid.style.display = 'grid';
+        }
+
+        loadDashboard();
+    </script>
+</body>
+</html>

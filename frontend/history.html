@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workout History - FitLog</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">FitLog</span>
+        </div>
+        <div class="nav-links">
+            <a href="./index.html">Dashboard</a>
+            <a href="./log.html">Log Workout</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <a href="./index.html" class="back-link">← Back to Dashboard</a>
+
+        <header class="page-header">
+            <h1 id="page-title">Workout History</h1>
+            <p class="subtitle" id="page-subtitle">All logged sets</p>
+        </header>
+
+        <!-- Filter -->
+        <div class="form-section" style="margin-bottom: 1.5rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="filter-exercise">Filter by Exercise</label>
+                <select id="filter-exercise" class="form-control">
+                    <option value="">All Exercises</option>
+                    <option value="bench_press">Bench Press</option>
+                    <option value="squat">Squat</option>
+                    <option value="deadlift">Deadlift</option>
+                    <option value="overhead_press">Overhead Press</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Stats Summary -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <span id="total-sets-stat" class="stat-value">--</span>
+                <span class="stat-label">Total Sets</span>
+            </div>
+            <div class="stat-card">
+                <span id="max-1rm-stat" class="stat-value">--</span>
+                <span class="stat-unit">lbs</span>
+                <span class="stat-label">Max Est. 1RM</span>
+            </div>
+            <div class="stat-card">
+                <span id="total-volume-stat" class="stat-value">--</span>
+                <span class="stat-unit">lbs</span>
+                <span class="stat-label">Total Volume</span>
+            </div>
+            <div class="stat-card">
+                <span id="avg-reps-stat" class="stat-value">--</span>
+                <span class="stat-label">Avg Reps/Set</span>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="form-section">
+            <div id="history-loading" class="loading">Loading history...</div>
+            <div id="history-container" style="display: none; overflow-x: auto;">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Day</th>
+                            <th>Exercise</th>
+                            <th>Weight</th>
+                            <th>Reps</th>
+                            <th>Est. 1RM</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody"></tbody>
+                </table>
+            </div>
+            <div id="pagination" style="margin-top: 1rem; text-align: center;"></div>
+        </div>
+    </main>
+
+    <script src="./api.js"></script>
+    <script>
+        let currentExercise = getUrlParam('exercise') || '';
+        let allWorkouts = [];
+        const PAGE_SIZE = 50;
+        let currentPage = 1;
+
+        // Set initial filter value from URL
+        document.getElementById('filter-exercise').value = currentExercise;
+
+        // Update page title if filtered
+        if (currentExercise && EXERCISES[currentExercise]) {
+            document.getElementById('page-title').textContent = `${EXERCISES[currentExercise].name} History`;
+            document.getElementById('page-subtitle').textContent = `All logged ${EXERCISES[currentExercise].name.toLowerCase()} sets`;
+        }
+
+        // Filter change handler
+        document.getElementById('filter-exercise').addEventListener('change', (e) => {
+            currentExercise = e.target.value;
+            currentPage = 1;
+
+            // Update URL without reload
+            const url = new URL(window.location);
+            if (currentExercise) {
+                url.searchParams.set('exercise', currentExercise);
+            } else {
+                url.searchParams.delete('exercise');
+            }
+            window.history.pushState({}, '', url);
+
+            // Update title
+            if (currentExercise && EXERCISES[currentExercise]) {
+                document.getElementById('page-title').textContent = `${EXERCISES[currentExercise].name} History`;
+                document.getElementById('page-subtitle').textContent = `All logged ${EXERCISES[currentExercise].name.toLowerCase()} sets`;
+            } else {
+                document.getElementById('page-title').textContent = 'Workout History';
+                document.getElementById('page-subtitle').textContent = 'All logged sets';
+            }
+
+            loadHistory();
+        });
+
+        async function loadHistory() {
+            document.getElementById('history-loading').style.display = 'block';
+            document.getElementById('history-container').style.display = 'none';
+
+            try {
+                const data = await FITLOG_API.getWorkouts(currentExercise || null, 1000);
+                allWorkouts = data.records || [];
+
+                updateStats();
+                renderPage();
+
+            } catch (error) {
+                console.error('Error loading history:', error);
+                document.getElementById('history-loading').textContent = 'Error loading data';
+            }
+        }
+
+        function updateStats() {
+            const totalSets = allWorkouts.length;
+            const max1rm = allWorkouts.reduce((max, w) => {
+                const est = parseInt(w.estimated_1rm);
+                return est > max ? est : max;
+            }, 0);
+            const totalVolume = allWorkouts.reduce((sum, w) => {
+                const weight = parseFloat(w.weight) || 0;
+                const reps = parseInt(w.reps) || 0;
+                return sum + (weight * reps);
+            }, 0);
+            const avgReps = totalSets > 0
+                ? (allWorkouts.reduce((sum, w) => sum + (parseInt(w.reps) || 0), 0) / totalSets).toFixed(1)
+                : 0;
+
+            document.getElementById('total-sets-stat').textContent = totalSets;
+            document.getElementById('max-1rm-stat').textContent = max1rm;
+            document.getElementById('total-volume-stat').textContent = formatNumber(Math.round(totalVolume));
+            document.getElementById('avg-reps-stat').textContent = avgReps;
+        }
+
+        function renderPage() {
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const end = start + PAGE_SIZE;
+            const pageWorkouts = allWorkouts.slice(start, end);
+
+            const tbody = document.getElementById('history-tbody');
+            tbody.innerHTML = pageWorkouts.map(w => `
+                <tr>
+                    <td>${w.date}</td>
+                    <td>${w.day_number.trim()}</td>
+                    <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
+                    <td>${w.weight.trim()} lbs</td>
+                    <td>${w.reps.trim()}</td>
+                    <td>${w.estimated_1rm.trim()} lbs</td>
+                </tr>
+            `).join('');
+
+            // Pagination
+            const totalPages = Math.ceil(allWorkouts.length / PAGE_SIZE);
+            const pagination = document.getElementById('pagination');
+
+            if (totalPages > 1) {
+                let paginationHtml = '';
+                if (currentPage > 1) {
+                    paginationHtml += `<button class="btn btn-secondary" onclick="goToPage(${currentPage - 1})">← Prev</button> `;
+                }
+                paginationHtml += `<span style="margin: 0 1rem; color: var(--text-muted);">Page ${currentPage} of ${totalPages}</span>`;
+                if (currentPage < totalPages) {
+                    paginationHtml += ` <button class="btn btn-secondary" onclick="goToPage(${currentPage + 1})">Next →</button>`;
+                }
+                pagination.innerHTML = paginationHtml;
+            } else {
+                pagination.innerHTML = '';
+            }
+
+            document.getElementById('history-loading').style.display = 'none';
+            document.getElementById('history-container').style.display = 'block';
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            renderPage();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>
