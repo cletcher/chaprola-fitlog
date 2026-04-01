@@ -2,7 +2,7 @@
 
 ## Git Push Authentication
 **Date:** 2026-04-01
-**Updated:** 2026-04-01 (Latest commit: 903d653)
+**Updated:** 2026-04-01 (Latest commit: 04be1cf)
 
 Git push failed with authentication error:
 ```
@@ -12,6 +12,8 @@ fatal: could not read Username for 'https://github.com': No such device or addre
 **Remote:** https://github.com/cletcher/chaprola-fitlog.git
 
 **Status:** All inbox tasks are COMPLETE. Local commits ready to push:
+- `04be1cf` - Add latest build logs
+- `700d95a` - Update QUESTIONS.md with latest commit status
 - `903d653` - Complete all inbox tasks and add build artifacts
 - `efd9cf1` - Fix auth headers in index.html dashboard
 - `59a4399` - Routed from Vogel eval v1: auth headers bug
