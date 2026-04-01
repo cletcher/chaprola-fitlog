@@ -35,10 +35,6 @@
 
     <script src="./api.js"></script>
     <script>
-        const API_BASE = 'https://api.chaprola.org';
-        const USERID = 'chaprola-fitlog';
-        const PROJECT = 'fitlog';
-
         const exercises = [
             { id: 'bench_press', name: 'Bench Press', icon: '🏋️' },
             { id: 'squat', name: 'Squat', icon: '🦵' },
@@ -48,31 +44,11 @@
 
         async function loadDashboard() {
             try {
-                // Fetch models data
-                const modelsResponse = await fetch(`${API_BASE}/query`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userid: USERID,
-                        project: PROJECT,
-                        file: 'models'
-                    })
-                });
-                const modelsData = await modelsResponse.json();
+                // Fetch models data using FITLOG_API
+                const modelsData = await FITLOG_API.getModels();
 
-                // Fetch recent workouts for each exercise
-                const workoutsResponse = await fetch(`${API_BASE}/query`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userid: USERID,
-                        project: PROJECT,
-                        file: 'workouts',
-                        order_by: [{ field: 'day_number', dir: 'desc' }],
-                        limit: 100
-                    })
-                });
-                const workoutsData = await workoutsResponse.json();
+                // Fetch recent workouts using FITLOG_API
+                const workoutsData = await FITLOG_API.getWorkouts(null, 100);
 
                 renderDashboard(modelsData.records, workoutsData.records);
             } catch (error) {
