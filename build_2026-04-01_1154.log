@@ -1,0 +1,23 @@
+All tasks in the inbox have been completed successfully! Here's a summary:
+
+## Completed Task: fix_auth_headers_v1.md
+
+### What was fixed:
+1. **index.html** - Replaced raw `fetch()` calls (lines 52-75) with `FITLOG_API.getModels()` and `FITLOG_API.getWorkouts()` to include proper Authorization headers
+2. **Audited other pages** - Confirmed log.html, exercise.html, and history.html already use FITLOG_API correctly
+3. **Deployed** - Pushed frontend to https://chaprola.org/apps/chaprola-fitlog/fitlog/
+4. **Tested** - Verified the fix is live by checking deployed source
+
+### Changes:
+- Modified: frontend/index.html
+- Removed duplicate constants (API_BASE, USERID, PROJECT)
+- Simplified code from ~26 lines to ~6 lines
+- All API calls now include Bearer token authentication
+
+### Status:
+- Task moved to inbox/done/fix_auth_headers_v1.md
+- Summary written to inbox/done/fix_auth_headers_v1_SUMMARY.md
+- Committed locally with hash efd9cf1
+
+### Note:
+Git push requires authentication. I've documented this in inbox/QUESTIONS.md for manual resolution. The fix is deployed and live, but the commit needs to be pushed to GitHub.
