@@ -50,10 +50,10 @@
                 // Fetch recent workouts using FITLOG_API
                 const workoutsData = await FITLOG_API.getWorkouts(null, 100);
 
-                renderDashboard(modelsData.records, workoutsData.records);
+                renderDashboard(modelsData.records || [], workoutsData.records || []);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
-                document.getElementById('overview-loading').textContent = 'Error loading data';
+                document.getElementById('overview-loading').textContent = 'Error loading data. Please refresh the page.';
             }
         }
 

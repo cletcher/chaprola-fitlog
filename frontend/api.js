@@ -6,9 +6,9 @@ const FITLOG_API = {
     PROJECT: 'fitlog',
     SITE_KEY: 'site_3dcb3e6762ec243e9ceb9f886f91d205b59208be60db1e2cedab4ecf818e0d89',
 
-    // Query data from a file
+    // Query data from a file (retries once on 401 — CORS preflight race on first load)
     async query(file, options = {}) {
-        const response = await fetch(`${this.BASE}/query`, {
+        const doFetch = () => fetch(`${this.BASE}/query`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -21,6 +21,11 @@ const FITLOG_API = {
                 ...options
             })
         });
+        let response = await doFetch();
+        if (response.status === 401) {
+            await new Promise(r => setTimeout(r, 500));
+            response = await doFetch();
+        }
         return response.json();
     },
 
@@ -62,9 +67,9 @@ const FITLOG_API = {
         return result.records && result.records[0];
     },
 
-    // Insert a record into a file
+    // Insert a record into a file (retries once on 401)
     async insertRecord(file, record) {
-        const response = await fetch(`${this.BASE}/insert-record`, {
+        const doFetch = () => fetch(`${this.BASE}/insert-record`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -77,6 +82,11 @@ const FITLOG_API = {
                 record
             })
         });
+        let response = await doFetch();
+        if (response.status === 401) {
+            await new Promise(r => setTimeout(r, 500));
+            response = await doFetch();
+        }
         return response.json();
     },
 
