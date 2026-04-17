@@ -46,10 +46,11 @@ const FITLOG_API = {
         return this.query('models');
     },
 
-    // Get workouts, optionally filtered by exercise
+    // Get workouts, optionally filtered by exercise.
+    // Ordered by date (ISO YYYY-MM-DD sorts correctly as a string, unlike day_number).
     async getWorkouts(exercise = null, limit = 100) {
         const options = {
-            order_by: [{ field: 'day_number', dir: 'desc' }],
+            order_by: [{ field: 'date', dir: 'desc' }],
             limit
         };
         if (exercise) {

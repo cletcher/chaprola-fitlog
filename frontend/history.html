@@ -130,10 +130,15 @@
             document.getElementById('history-container').style.display = 'none';
 
             try {
-                const data = await FITLOG_API.getWorkouts(currentExercise || null, 1000);
+                // Table rows come from /query; aggregates come from the HISTORY_STATS report
+                // on the server — a data platform demo shouldn't aggregate client-side.
+                const [data, statsText] = await Promise.all([
+                    FITLOG_API.getWorkouts(currentExercise || null, 1000),
+                    FITLOG_API.report('HISTORY_STATS', { exercise: currentExercise || '' })
+                ]);
                 allWorkouts = data.records || [];
 
-                updateStats();
+                updateStats(statsText);
                 renderPage();
 
             } catch (error) {
@@ -142,25 +147,23 @@
             }
         }
 
-        function updateStats() {
-            const totalSets = allWorkouts.length;
-            const max1rm = allWorkouts.reduce((max, w) => {
-                const est = parseInt(w.estimated_1rm);
-                return est > max ? est : max;
-            }, 0);
-            const totalVolume = allWorkouts.reduce((sum, w) => {
-                const weight = parseFloat(w.weight) || 0;
-                const reps = parseInt(w.reps) || 0;
-                return sum + (weight * reps);
-            }, 0);
-            const avgReps = totalSets > 0
-                ? (allWorkouts.reduce((sum, w) => sum + (parseInt(w.reps) || 0), 0) / totalSets).toFixed(1)
-                : 0;
+        function parsePipeStats(text) {
+            const stats = {};
+            text.split('\n').forEach(line => {
+                const [key, value] = line.split('|');
+                if (key) stats[key.trim()] = (value || '').trim();
+            });
+            return stats;
+        }
 
-            document.getElementById('total-sets-stat').textContent = totalSets;
-            document.getElementById('max-1rm-stat').textContent = max1rm;
-            document.getElementById('total-volume-stat').textContent = formatNumber(Math.round(totalVolume));
-            document.getElementById('avg-reps-stat').textContent = avgReps;
+        function updateStats(statsText) {
+            const stats = parsePipeStats(statsText);
+            document.getElementById('total-sets-stat').textContent = stats.total_sets || '0';
+            document.getElementById('max-1rm-stat').textContent = stats.max_1rm || '0';
+            document.getElementById('total-volume-stat').textContent =
+                formatNumber(parseInt(stats.total_volume || '0', 10));
+            document.getElementById('avg-reps-stat').textContent =
+                parseFloat(stats.avg_reps || '0').toFixed(1);
         }
 
         function renderPage() {

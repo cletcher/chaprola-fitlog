@@ -50,14 +50,23 @@
                 // Fetch recent workouts using FITLOG_API
                 const workoutsData = await FITLOG_API.getWorkouts(null, 100);
 
-                renderDashboard(modelsData.records || [], workoutsData.records || []);
+                const workouts = workoutsData.records || [];
+
+                // Derive current day from the latest workout (day_number is stored as a string,
+                // so parse numerically before taking the max). Falls back to day 1 if no data.
+                const allDays = workouts
+                    .map(w => parseInt(w.day_number, 10))
+                    .filter(n => !isNaN(n));
+                const currentDay = allDays.length ? Math.max(...allDays) : 1;
+
+                renderDashboard(modelsData.records || [], workouts, currentDay);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 document.getElementById('overview-loading').textContent = 'Error loading data. Please refresh the page.';
             }
         }
 
-        function renderDashboard(models, workouts) {
+        function renderDashboard(models, workouts, currentDay) {
             const grid = document.getElementById('overview-grid');
             const loading = document.getElementById('overview-loading');
 
@@ -84,7 +93,6 @@
 
                 const slope = parseFloat(model.param_a) || 0;
                 const base = parseFloat(model.param_b) || 0;
-                const currentDay = 38; // Approximate current day
                 const current1RM = (slope * currentDay + base).toFixed(0);
                 const projected30 = (slope * (currentDay + 30) + base).toFixed(0);
                 const weeklyGain = (slope * 7).toFixed(1);

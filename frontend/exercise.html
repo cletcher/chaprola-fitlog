@@ -103,7 +103,12 @@
                 const workouts = workoutsData.records || [];
                 const slope = parseFloat(model?.param_a) || 0;
                 const base = parseFloat(model?.param_b) || 0;
-                const currentDay = 38;
+
+                // day_number is stored as a string; parse numerically before taking the max.
+                const allDays = workouts
+                    .map(w => parseInt(w.day_number, 10))
+                    .filter(n => !isNaN(n));
+                const currentDay = allDays.length ? Math.max(...allDays) : 1;
 
                 // Update stats
                 document.getElementById('current-1rm').textContent = Math.round(FITLOG_API.predict1RM(slope, base, currentDay));
