@@ -30,9 +30,11 @@
 
         <section class="quick-actions">
             <a href="./log.html" class="btn btn-primary btn-large">Log New Workout</a>
+            <a id="tip-jar-btn" class="btn btn-secondary btn-large" style="display:none;" target="_blank" rel="noopener">❤️ Support fitlog — $5</a>
         </section>
     </main>
 
+    <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
         const exercises = [
@@ -134,7 +136,15 @@
             grid.style.display = 'grid';
         }
 
-        loadDashboard();
+        (async () => {
+            await requireAuth();
+            if (TIP_URL) {
+                const btn = document.getElementById('tip-jar-btn');
+                btn.href = TIP_URL;
+                btn.style.display = '';
+            }
+            loadDashboard();
+        })();
     </script>
 </body>
 </html>

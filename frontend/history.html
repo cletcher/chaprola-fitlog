@@ -83,6 +83,7 @@
         </div>
     </main>
 
+    <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
         let currentExercise = getUrlParam('exercise') || '';
@@ -211,7 +212,10 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        loadHistory();
+        (async () => {
+            await requireAuth();
+            loadHistory();
+        })();
     </script>
 </body>
 </html>

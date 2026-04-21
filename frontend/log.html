@@ -93,8 +93,12 @@
         </div>
     </main>
 
+    <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
+        (async () => {
+        await requireAuth();
+
         // Set default date to today
         document.getElementById('date').valueAsDate = new Date();
 
@@ -197,6 +201,11 @@
                     document.getElementById('notes').value = '';
                     estimatePreview.style.display = 'none';
 
+                    // Refit the per-user model for this exercise. Fire-and-forget —
+                    // the user doesn't need to wait on the refit to log the next set.
+                    FITLOG_API.runProgram('OPTIMIZE_MODEL', { exercise })
+                        .catch(err => console.warn('Model refit failed:', err));
+
                     // Reload recent sets
                     loadRecentSets();
                 } else {
@@ -216,6 +225,7 @@
         });
 
         loadRecentSets();
+        })();
     </script>
 </body>
 </html>

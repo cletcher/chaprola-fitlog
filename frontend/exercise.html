@@ -82,6 +82,7 @@
         </div>
     </main>
 
+    <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
         const exerciseId = getUrlParam('name') || 'bench_press';
@@ -260,7 +261,10 @@
         // Redraw on resize
         window.addEventListener('resize', loadExerciseDetail);
 
-        loadExerciseDetail();
+        (async () => {
+            await requireAuth();
+            loadExerciseDetail();
+        })();
     </script>
 </body>
 </html>
