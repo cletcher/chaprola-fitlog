@@ -107,9 +107,18 @@
                     <div class="exercise-card exercise-card-empty">
                         <div class="card-header">
                             <span class="exercise-icon">${ex.icon}</span>
-                            <h2>${ex.name}</h2>
+                            <h2>${esc(ex.name)}</h2>
                         </div>
-                        <div class="card-footer"><span class="last-workout">Log a set to fit your first model</span></div>
+                        <div class="card-stats">
+                            <div class="stat-primary">
+                                <span class="stat-value">—</span>
+                                <span class="stat-label">No data yet — log a set to start tracking</span>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="last-workout">No workouts yet</span>
+                            <a href="./log.html?exercise=${esc(ex.id)}" class="view-details">Log →</a>
+                        </div>
                     </div>
                 `;
 
@@ -121,22 +130,22 @@
                 const weeklyGain = FITLOG_API.toDisplay(slope * 7, unit);
 
                 return `
-                    <a href="./exercise.html?name=${ex.id}" class="exercise-card">
+                    <a href="./exercise.html?name=${esc(ex.id)}" class="exercise-card">
                         <div class="card-header">
                             <span class="exercise-icon">${ex.icon}</span>
-                            <h2>${ex.name}</h2>
+                            <h2>${esc(ex.name)}</h2>
                             ${r2 > 0 ? `<span class="r2-badge" title="Goodness of fit">R² ${r2.toFixed(2)}</span>` : ''}
                         </div>
                         <div class="card-stats">
                             <div class="stat-primary">
                                 <span class="stat-value">${current1RM}</span>
-                                <span class="stat-unit">${unit}</span>
+                                <span class="stat-unit">${esc(unit)}</span>
                                 <span class="stat-label">Est. 1RM</span>
                             </div>
                             <div class="stat-secondary">
                                 <div class="stat-item">
                                     <span class="stat-value-sm">+${weeklyGain}</span>
-                                    <span class="stat-label-sm">${unit}/week</span>
+                                    <span class="stat-label-sm">${esc(unit)}/week</span>
                                 </div>
                                 <div class="stat-item">
                                     <span class="stat-value-sm">${projected30}</span>
@@ -146,7 +155,7 @@
                         </div>
                         <div class="card-footer">
                             <span class="last-workout">
-                                ${latestWorkout ? `Last: ${FITLOG_API.toDisplay(latestWorkout.weight, unit)}${unit} × ${String(latestWorkout.reps).trim()}` : 'No workouts yet'}
+                                ${latestWorkout ? `Last: ${FITLOG_API.toDisplay(latestWorkout.weight, unit)}${esc(unit)} × ${esc(String(latestWorkout.reps).trim())}` : 'No workouts yet'}
                             </span>
                             <span class="view-details">View Details →</span>
                         </div>

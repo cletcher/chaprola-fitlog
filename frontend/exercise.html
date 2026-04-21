@@ -150,7 +150,7 @@
                     ];
                     document.getElementById('projections').innerHTML = projections.map(p => {
                         const predicted = FITLOG_API.toDisplay(slope * (currentDay + p.days) + base, unit);
-                        return `<div class="projection-badge">${p.label}: <strong>${predicted} ${unit}</strong></div>`;
+                        return `<div class="projection-badge">${esc(p.label)}: <strong>${predicted} ${esc(unit)}</strong></div>`;
                     }).join('');
 
                     drawChart(workouts, slope, base, unit);
@@ -196,9 +196,9 @@
 
                 active.innerHTML = `
                     <div class="goal-summary">
-                        <div><strong>${targetDisplay} ${unit}</strong> by <strong>${targetDate}</strong></div>
-                        <div class="goal-sub">${etaMsg}</div>
-                        <div class="goal-sub">Projected on that date: <strong>${FITLOG_API.toDisplay(projectedAtTarget, unit)} ${unit}</strong> ${badge}</div>
+                        <div><strong>${targetDisplay} ${esc(unit)}</strong> by <strong>${esc(targetDate)}</strong></div>
+                        <div class="goal-sub">${esc(etaMsg)}</div>
+                        <div class="goal-sub">Projected on that date: <strong>${FITLOG_API.toDisplay(projectedAtTarget, unit)} ${esc(unit)}</strong> ${badge}</div>
                     </div>
                     <button id="goal-clear" class="btn btn-link">Clear goal</button>
                 `;

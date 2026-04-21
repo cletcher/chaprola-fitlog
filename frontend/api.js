@@ -279,6 +279,18 @@ const EXERCISES = {
     overhead_press: { name: 'Overhead Press', icon: '🙌' }
 };
 
+// HTML-escape any backend-sourced string before it hits innerHTML. Covers
+// stored-XSS via the shared guest account (Dalf FINDING-005) and self-XSS
+// via display_name (FINDING-008). Apply to every field that was written
+// by a user — notes, display_name, email, free-form inputs. Numeric fields
+// from records get the same treatment as defense-in-depth.
+function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
 function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
 }
@@ -353,7 +365,7 @@ function _renderUserChip() {
     const chip = document.createElement('div');
     chip.id = 'user-chip';
     chip.innerHTML = `
-        <span class="user-chip-label">${label}</span>
+        <span class="user-chip-label">${esc(label)}</span>
         <select id="user-chip-unit" class="user-chip-unit" title="Display unit">
             <option value="lbs">lbs</option>
             <option value="kg">kg</option>

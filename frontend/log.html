@@ -125,16 +125,22 @@
 
             async function loadRecentSets() {
                 try {
-                    const data = await FITLOG_API.getWorkouts(null, 10);
+                    // Filter Recent Sets to the selected exercise when one is chosen;
+                    // show the mixed list when the picker is blank (initial state).
+                    const selectedExercise = document.getElementById('exercise').value || null;
+                    const data = await FITLOG_API.getWorkouts(selectedExercise, 10);
                     const tbody = document.getElementById('recent-tbody');
-                    tbody.innerHTML = (data.records || []).map(w => `
-                        <tr>
-                            <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
-                            <td>${FITLOG_API.toDisplay(w.weight, unit)} ${unit}</td>
-                            <td>${String(w.reps).trim()}</td>
-                            <td>${FITLOG_API.toDisplay(w.estimated_1rm, unit)} ${unit}</td>
-                        </tr>
-                    `).join('');
+                    tbody.innerHTML = (data.records || []).map(w => {
+                        const name = EXERCISES[w.exercise.trim()]?.name || w.exercise;
+                        return `
+                            <tr>
+                                <td>${esc(name)}</td>
+                                <td>${FITLOG_API.toDisplay(w.weight, unit)} ${esc(unit)}</td>
+                                <td>${esc(String(w.reps).trim())}</td>
+                                <td>${FITLOG_API.toDisplay(w.estimated_1rm, unit)} ${esc(unit)}</td>
+                            </tr>
+                        `;
+                    }).join('');
                     document.getElementById('recent-loading').style.display = 'none';
                     document.getElementById('recent-table').style.display = 'table';
                 } catch (error) {
@@ -142,6 +148,9 @@
                     document.getElementById('recent-loading').textContent = 'Error loading data';
                 }
             }
+
+            // Re-filter Recent Sets when the exercise picker changes.
+            document.getElementById('exercise').addEventListener('change', loadRecentSets);
 
             document.getElementById('workout-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -178,11 +187,12 @@
                 try {
                     const result = await FITLOG_API.insertRecord('workouts', record);
                     if (result.status === 'ok') {
+                        const name = EXERCISES[exercise]?.name || exercise;
                         alertContainer.innerHTML = `
                             <div class="alert alert-success">
                                 <strong>Set logged!</strong><br>
-                                ${EXERCISES[exercise]?.name}: ${FITLOG_API.toDisplay(weightLbs, unit)} ${unit} × ${reps} reps (Est. 1RM: ${FITLOG_API.toDisplay(est1rm, unit)} ${unit})
-                                <br><small>Day ${dayNumber} — ${date}</small>
+                                ${esc(name)}: ${FITLOG_API.toDisplay(weightLbs, unit)} ${esc(unit)} × ${esc(String(reps))} reps (Est. 1RM: ${FITLOG_API.toDisplay(est1rm, unit)} ${esc(unit)})
+                                <br><small>Day ${esc(String(dayNumber))} — ${esc(date)}</small>
                             </div>
                         `;
                         document.getElementById('exercise').value = '';
@@ -201,7 +211,7 @@
                 } catch (error) {
                     alertContainer.innerHTML = `
                         <div class="alert alert-error">
-                            <strong>Error logging workout:</strong><br>${error.message}
+                            <strong>Error logging workout:</strong><br>${esc(error.message || String(error))}
                         </div>
                     `;
                 }
