@@ -657,3 +657,134 @@ select.form-control {
     font-size: 0.85rem;
     padding: 0.25rem 0.5rem;
 }
+
+.user-chip-unit {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+/* Weekly summary card */
+.weekly-summary {
+    margin-bottom: 1.5rem;
+}
+.weekly-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+.weekly-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+.weekly-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+.weekly-unit {
+    color: var(--text-secondary);
+}
+
+/* R² badge */
+.r2-badge {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-left: auto;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+/* Goal tracker card */
+.goal-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.goal-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+.goal-sub {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+.goal-form {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+.goal-form .form-group {
+    flex: 1;
+    min-width: 140px;
+}
+.badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+.badge-success { background: rgba(16, 185, 129, 0.15); color: var(--accent-success); }
+.badge-warn { background: rgba(245, 158, 11, 0.15); color: var(--accent-warning); }
+
+/* History row actions */
+.row-actions {
+    white-space: nowrap;
+}
+.row-actions .btn-link {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+/* Edit dialog */
+.edit-dialog {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.edit-dialog-inner {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 500px;
+    width: 90%;
+}
+.edit-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+.edit-actions .btn {
+    width: auto;
+}
+
+/* Empty exercise card */
+.exercise-card-empty {
+    opacity: 0.6;
+    cursor: default;
+}

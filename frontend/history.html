@@ -14,6 +14,7 @@
         <div class="nav-links">
             <a href="./index.html">Dashboard</a>
             <a href="./log.html">Log Workout</a>
+            <a href="./history.html" class="active">History</a>
         </div>
     </nav>
 
@@ -25,7 +26,6 @@
             <p class="subtitle" id="page-subtitle">All logged sets</p>
         </header>
 
-        <!-- Filter -->
         <div class="form-section" style="margin-bottom: 1.5rem;">
             <div class="form-group" style="margin-bottom: 0;">
                 <label class="form-label" for="filter-exercise">Filter by Exercise</label>
@@ -39,7 +39,6 @@
             </div>
         </div>
 
-        <!-- Stats Summary -->
         <div class="stats-grid" id="stats-grid">
             <div class="stat-card">
                 <span id="total-sets-stat" class="stat-value">--</span>
@@ -47,12 +46,12 @@
             </div>
             <div class="stat-card">
                 <span id="max-1rm-stat" class="stat-value">--</span>
-                <span class="stat-unit">lbs</span>
+                <span class="stat-unit" id="unit-1">lbs</span>
                 <span class="stat-label">Max Est. 1RM</span>
             </div>
             <div class="stat-card">
                 <span id="total-volume-stat" class="stat-value">--</span>
-                <span class="stat-unit">lbs</span>
+                <span class="stat-unit" id="unit-2">lbs</span>
                 <span class="stat-label">Total Volume</span>
             </div>
             <div class="stat-card">
@@ -61,7 +60,6 @@
             </div>
         </div>
 
-        <!-- History Table -->
         <div class="form-section">
             <div id="history-loading" class="loading">Loading history...</div>
             <div id="history-container" style="display: none; overflow-x: auto;">
@@ -74,6 +72,7 @@
                             <th>Weight</th>
                             <th>Reps</th>
                             <th>Est. 1RM</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody id="history-tbody"></tbody>
@@ -83,38 +82,59 @@
         </div>
     </main>
 
+    <div id="edit-dialog" class="edit-dialog" style="display:none;">
+        <div class="edit-dialog-inner">
+            <h3>Edit Set</h3>
+            <form id="edit-form">
+                <input type="hidden" id="edit-workout-id">
+                <div class="form-group">
+                    <label class="form-label" for="edit-exercise">Exercise</label>
+                    <select id="edit-exercise" class="form-control">
+                        <option value="bench_press">Bench Press</option>
+                        <option value="squat">Squat</option>
+                        <option value="deadlift">Deadlift</option>
+                        <option value="overhead_press">Overhead Press</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-weight">Weight</label>
+                    <div class="input-group">
+                        <input type="number" id="edit-weight" class="form-control" min="0" step="1" required>
+                        <span class="input-suffix" id="edit-unit">lbs</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-reps">Reps</label>
+                    <input type="number" id="edit-reps" class="form-control" min="1" max="50" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-date">Date</label>
+                    <input type="date" id="edit-date" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="edit-notes">Notes</label>
+                    <input type="text" id="edit-notes" class="form-control">
+                </div>
+                <div class="edit-actions">
+                    <button type="button" id="edit-cancel" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
         let currentExercise = getUrlParam('exercise') || '';
-        let allWorkouts = [];
         const PAGE_SIZE = 50;
         let currentPage = 1;
+        let totalSets = 0;
+        let unit = 'lbs';
 
-        // Set initial filter value from URL
         document.getElementById('filter-exercise').value = currentExercise;
 
-        // Update page title if filtered
-        if (currentExercise && EXERCISES[currentExercise]) {
-            document.getElementById('page-title').textContent = `${EXERCISES[currentExercise].name} History`;
-            document.getElementById('page-subtitle').textContent = `All logged ${EXERCISES[currentExercise].name.toLowerCase()} sets`;
-        }
-
-        // Filter change handler
-        document.getElementById('filter-exercise').addEventListener('change', (e) => {
-            currentExercise = e.target.value;
-            currentPage = 1;
-
-            // Update URL without reload
-            const url = new URL(window.location);
-            if (currentExercise) {
-                url.searchParams.set('exercise', currentExercise);
-            } else {
-                url.searchParams.delete('exercise');
-            }
-            window.history.pushState({}, '', url);
-
-            // Update title
+        function updateTitle() {
             if (currentExercise && EXERCISES[currentExercise]) {
                 document.getElementById('page-title').textContent = `${EXERCISES[currentExercise].name} History`;
                 document.getElementById('page-subtitle').textContent = `All logged ${EXERCISES[currentExercise].name.toLowerCase()} sets`;
@@ -122,26 +142,32 @@
                 document.getElementById('page-title').textContent = 'Workout History';
                 document.getElementById('page-subtitle').textContent = 'All logged sets';
             }
+        }
+        updateTitle();
 
+        document.getElementById('filter-exercise').addEventListener('change', (e) => {
+            currentExercise = e.target.value;
+            currentPage = 1;
+            const url = new URL(window.location);
+            if (currentExercise) url.searchParams.set('exercise', currentExercise); else url.searchParams.delete('exercise');
+            window.history.pushState({}, '', url);
+            updateTitle();
             loadHistory();
         });
 
         async function loadHistory() {
             document.getElementById('history-loading').style.display = 'block';
             document.getElementById('history-container').style.display = 'none';
-
             try {
-                // Table rows come from /query; aggregates come from the HISTORY_STATS report
-                // on the server — a data platform demo shouldn't aggregate client-side.
+                const offset = (currentPage - 1) * PAGE_SIZE;
                 const [data, statsText] = await Promise.all([
-                    FITLOG_API.getWorkouts(currentExercise || null, 1000),
+                    FITLOG_API.getWorkouts(currentExercise || null, PAGE_SIZE, offset),
                     FITLOG_API.report('HISTORY_STATS', { exercise: currentExercise || '' })
                 ]);
-                allWorkouts = data.records || [];
-
+                const rows = data.records || [];
+                totalSets = parseInt((data.total_records ?? data.matched_records) || rows.length, 10);
                 updateStats(statsText);
-                renderPage();
-
+                renderPage(rows);
             } catch (error) {
                 console.error('Error loading history:', error);
                 document.getElementById('history-loading').textContent = 'Error loading data';
@@ -160,60 +186,126 @@
         function updateStats(statsText) {
             const stats = parsePipeStats(statsText);
             document.getElementById('total-sets-stat').textContent = stats.total_sets || '0';
-            document.getElementById('max-1rm-stat').textContent = stats.max_1rm || '0';
-            document.getElementById('total-volume-stat').textContent =
-                formatNumber(parseInt(stats.total_volume || '0', 10));
-            document.getElementById('avg-reps-stat').textContent =
-                parseFloat(stats.avg_reps || '0').toFixed(1);
+            const maxLbs = parseFloat(stats.max_1rm || '0');
+            const totLbs = parseFloat(stats.total_volume || '0');
+            document.getElementById('max-1rm-stat').textContent = FITLOG_API.toDisplay(maxLbs, unit);
+            document.getElementById('total-volume-stat').textContent = formatNumber(Math.round(unit === 'kg' ? totLbs / 2.2046226218 : totLbs));
+            document.getElementById('avg-reps-stat').textContent = parseFloat(stats.avg_reps || '0').toFixed(1);
         }
 
-        function renderPage() {
-            const start = (currentPage - 1) * PAGE_SIZE;
-            const end = start + PAGE_SIZE;
-            const pageWorkouts = allWorkouts.slice(start, end);
-
+        function renderPage(rows) {
             const tbody = document.getElementById('history-tbody');
-            tbody.innerHTML = pageWorkouts.map(w => `
-                <tr>
-                    <td>${w.date}</td>
-                    <td>${w.day_number.trim()}</td>
-                    <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
-                    <td>${w.weight.trim()} lbs</td>
-                    <td>${w.reps.trim()}</td>
-                    <td>${w.estimated_1rm.trim()} lbs</td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = rows.map(w => {
+                const id = (w.workout_id || '').trim();
+                return `
+                    <tr data-workout-id="${id}">
+                        <td>${w.date}</td>
+                        <td>${String(w.day_number).trim()}</td>
+                        <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
+                        <td>${FITLOG_API.toDisplay(w.weight, unit)} ${unit}</td>
+                        <td>${String(w.reps).trim()}</td>
+                        <td>${FITLOG_API.toDisplay(w.estimated_1rm, unit)} ${unit}</td>
+                        <td class="row-actions">
+                            <button class="btn btn-link edit-btn"
+                                data-id="${id}"
+                                data-exercise="${w.exercise.trim()}"
+                                data-weight="${String(w.weight).trim()}"
+                                data-reps="${String(w.reps).trim()}"
+                                data-date="${w.date.trim()}"
+                                data-notes="${(w.notes || '').replace(/"/g, '&quot;')}">Edit</button>
+                            <button class="btn btn-link delete-btn" data-id="${id}" data-exercise="${w.exercise.trim()}">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
 
-            // Pagination
-            const totalPages = Math.ceil(allWorkouts.length / PAGE_SIZE);
+            const totalPages = Math.max(1, Math.ceil(totalSets / PAGE_SIZE));
             const pagination = document.getElementById('pagination');
-
             if (totalPages > 1) {
-                let paginationHtml = '';
-                if (currentPage > 1) {
-                    paginationHtml += `<button class="btn btn-secondary" onclick="goToPage(${currentPage - 1})">← Prev</button> `;
-                }
-                paginationHtml += `<span style="margin: 0 1rem; color: var(--text-muted);">Page ${currentPage} of ${totalPages}</span>`;
-                if (currentPage < totalPages) {
-                    paginationHtml += ` <button class="btn btn-secondary" onclick="goToPage(${currentPage + 1})">Next →</button>`;
-                }
-                pagination.innerHTML = paginationHtml;
+                let html = '';
+                if (currentPage > 1) html += `<button class="btn btn-secondary" id="prev-page">← Prev</button> `;
+                html += `<span style="margin: 0 1rem; color: var(--text-muted);">Page ${currentPage} of ${totalPages}</span>`;
+                if (currentPage < totalPages) html += ` <button class="btn btn-secondary" id="next-page">Next →</button>`;
+                pagination.innerHTML = html;
+                const prev = document.getElementById('prev-page');
+                const next = document.getElementById('next-page');
+                if (prev) prev.addEventListener('click', () => { currentPage--; loadHistory(); });
+                if (next) next.addEventListener('click', () => { currentPage++; loadHistory(); });
             } else {
                 pagination.innerHTML = '';
             }
+
+            document.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', onEdit));
+            document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', onDelete));
 
             document.getElementById('history-loading').style.display = 'none';
             document.getElementById('history-container').style.display = 'block';
         }
 
-        function goToPage(page) {
-            currentPage = page;
-            renderPage();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+        function onEdit(e) {
+            const b = e.target;
+            const id = b.dataset.id;
+            document.getElementById('edit-workout-id').value = id;
+            document.getElementById('edit-exercise').value = b.dataset.exercise;
+            document.getElementById('edit-weight').value = FITLOG_API.toDisplay(b.dataset.weight, unit);
+            document.getElementById('edit-reps').value = b.dataset.reps;
+            document.getElementById('edit-date').value = b.dataset.date;
+            document.getElementById('edit-notes').value = b.dataset.notes;
+            document.getElementById('edit-dialog').style.display = 'flex';
         }
+
+        async function onDelete(e) {
+            const id = e.target.dataset.id;
+            const exercise = e.target.dataset.exercise;
+            if (!confirm('Delete this set? This cannot be undone.')) return;
+            await FITLOG_API.deleteRecord('workouts', { workout_id: id });
+            // Refit the affected exercise's model so the dashboard stays honest
+            FITLOG_API.refitModel(exercise).catch(err => console.warn('refit failed:', err));
+            loadHistory();
+        }
+
+        document.getElementById('edit-cancel').addEventListener('click', () => {
+            document.getElementById('edit-dialog').style.display = 'none';
+        });
+
+        document.getElementById('edit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-workout-id').value;
+            const exercise = document.getElementById('edit-exercise').value;
+            const weightLbs = FITLOG_API.toLbs(document.getElementById('edit-weight').value, unit);
+            const reps = parseInt(document.getElementById('edit-reps').value);
+            const date = document.getElementById('edit-date').value;
+            const notes = document.getElementById('edit-notes').value || '';
+
+            const startDate = new Date('2026-01-01');
+            const workoutDate = new Date(date);
+            const dayNumber = Math.floor((workoutDate - startDate) / (86400 * 1000)) + 1;
+            const est1rm = epley1RM(weightLbs, reps);
+
+            await FITLOG_API.updateRecord('workouts',
+                { workout_id: id },
+                {
+                    exercise,
+                    weight: String(weightLbs),
+                    reps: String(reps),
+                    date,
+                    day_number: String(dayNumber),
+                    estimated_1rm: String(est1rm),
+                    notes
+                }
+            );
+            // Refit (previous exercise AND new exercise if changed)
+            FITLOG_API.refitModel(exercise).catch(err => console.warn('refit failed:', err));
+            document.getElementById('edit-dialog').style.display = 'none';
+            loadHistory();
+        });
 
         (async () => {
             await requireAuth();
+            unit = window.FITLOG_UNIT || 'lbs';
+            document.getElementById('unit-1').textContent = unit;
+            document.getElementById('unit-2').textContent = unit;
+            document.getElementById('edit-unit').textContent = unit;
             loadHistory();
         })();
     </script>

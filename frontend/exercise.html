@@ -14,6 +14,7 @@
         <div class="nav-links">
             <a href="./index.html">Dashboard</a>
             <a href="./log.html">Log Workout</a>
+            <a href="./history.html">History</a>
         </div>
     </nav>
 
@@ -24,25 +25,25 @@
             <div class="exercise-detail-header">
                 <span id="exercise-icon" class="exercise-icon"></span>
                 <h1 id="exercise-name">Loading...</h1>
+                <span id="r2-badge" class="r2-badge" style="display:none;"></span>
             </div>
             <p class="subtitle">Fitted linear model: 1RM = slope × day + base</p>
         </header>
 
-        <!-- Stats Overview -->
         <div class="stats-grid">
             <div class="stat-card">
                 <span id="current-1rm" class="stat-value">--</span>
-                <span class="stat-unit">lbs</span>
+                <span class="stat-unit" id="unit-1">lbs</span>
                 <span class="stat-label">Current Est. 1RM</span>
             </div>
             <div class="stat-card">
                 <span id="daily-gain" class="stat-value">--</span>
-                <span class="stat-unit">lbs/day</span>
+                <span class="stat-unit" id="unit-2">lbs/day</span>
                 <span class="stat-label">Growth Rate</span>
             </div>
             <div class="stat-card">
                 <span id="base-1rm" class="stat-value">--</span>
-                <span class="stat-unit">lbs</span>
+                <span class="stat-unit" id="unit-3">lbs</span>
                 <span class="stat-label">Base 1RM</span>
             </div>
             <div class="stat-card">
@@ -51,31 +52,42 @@
             </div>
         </div>
 
-        <!-- Progress Chart -->
         <div class="chart-container">
             <div class="chart-header">
                 <h2 class="chart-title">Progress Over Time</h2>
                 <div class="chart-legend">
-                    <div class="legend-item">
-                        <span class="legend-dot actual"></span>
-                        <span>Actual 1RM</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot predicted"></span>
-                        <span>Fitted Model</span>
-                    </div>
+                    <div class="legend-item"><span class="legend-dot actual"></span><span>Actual 1RM</span></div>
+                    <div class="legend-item"><span class="legend-dot predicted"></span><span>Fitted Model</span></div>
                 </div>
             </div>
             <canvas id="progressChart"></canvas>
         </div>
 
-        <!-- Projections -->
         <div class="form-section">
-            <h3 style="margin-bottom: 1rem;">Projections</h3>
+            <h3 style="margin-bottom: 1rem;">Short-term Projections</h3>
             <div class="projections-row" id="projections"></div>
+            <p class="subtitle" style="margin-top:0.75rem;">Linear fits are honest short-term only — horizons beyond 60 days aren't shown.</p>
         </div>
 
-        <!-- History Link -->
+        <section class="form-section">
+            <h3 style="margin-bottom: 0.5rem;">Goal</h3>
+            <div id="goal-active" style="display:none;" class="goal-card"></div>
+            <form id="goal-form" class="goal-form">
+                <div class="form-group">
+                    <label class="form-label" for="goal-target">Target weight</label>
+                    <div class="input-group">
+                        <input type="number" id="goal-target" class="form-control" placeholder="e.g. 315" min="1" step="1">
+                        <span class="input-suffix" id="goal-unit">lbs</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="goal-date">Target date</label>
+                    <input type="date" id="goal-date" class="form-control">
+                </div>
+                <button type="submit" class="btn btn-primary">Set Goal</button>
+            </form>
+        </section>
+
         <div class="quick-actions">
             <a id="history-link" href="#" class="btn btn-secondary">View Full History →</a>
             <a href="./log.html" class="btn btn-primary" style="margin-left: 1rem;">Log Workout</a>
@@ -85,184 +97,232 @@
     <script src="https://chaprola.org/chaprola-auth.js"></script>
     <script src="./api.js"></script>
     <script>
-        const exerciseId = getUrlParam('name') || 'bench_press';
-        const exerciseInfo = EXERCISES[exerciseId] || { name: exerciseId, icon: '🏋️' };
-
-        async function loadExerciseDetail() {
-            document.getElementById('exercise-name').textContent = exerciseInfo.name;
-            document.getElementById('exercise-icon').textContent = exerciseInfo.icon;
-            document.getElementById('history-link').href = `./history.html?exercise=${exerciseId}`;
-            document.title = `${exerciseInfo.name} - FitLog`;
-
-            try {
-                // Load model and workouts in parallel
-                const [model, workoutsData] = await Promise.all([
-                    FITLOG_API.getModel(exerciseId),
-                    FITLOG_API.getWorkouts(exerciseId, 500)
-                ]);
-
-                const workouts = workoutsData.records || [];
-                const slope = parseFloat(model?.param_a) || 0;
-                const base = parseFloat(model?.param_b) || 0;
-
-                // day_number is stored as a string; parse numerically before taking the max.
-                const allDays = workouts
-                    .map(w => parseInt(w.day_number, 10))
-                    .filter(n => !isNaN(n));
-                const currentDay = allDays.length ? Math.max(...allDays) : 1;
-
-                // Update stats
-                document.getElementById('current-1rm').textContent = Math.round(FITLOG_API.predict1RM(slope, base, currentDay));
-                document.getElementById('daily-gain').textContent = slope.toFixed(3);
-                document.getElementById('base-1rm').textContent = Math.round(base);
-                document.getElementById('total-sets').textContent = workouts.length;
-
-                // Projections
-                const projections = [
-                    { days: 30, label: '30-Day' },
-                    { days: 60, label: '60-Day' },
-                    { days: 90, label: '90-Day' },
-                    { days: 180, label: '6-Month' }
-                ];
-                document.getElementById('projections').innerHTML = projections.map(p => {
-                    const predicted = Math.round(FITLOG_API.predict1RM(slope, base, currentDay + p.days));
-                    return `<div class="projection-badge">${p.label}: <strong>${predicted} lbs</strong></div>`;
-                }).join('');
-
-                // Draw chart
-                drawChart(workouts, slope, base);
-
-            } catch (error) {
-                console.error('Error loading exercise detail:', error);
-            }
-        }
-
-        function drawChart(workouts, slope, base) {
-            const canvas = document.getElementById('progressChart');
-            const ctx = canvas.getContext('2d');
-
-            // Set canvas size
-            const rect = canvas.parentElement.getBoundingClientRect();
-            canvas.width = rect.width - 48;
-            canvas.height = 300;
-
-            // Aggregate workouts by day
-            const dayData = {};
-            workouts.forEach(w => {
-                const day = parseInt(w.day_number);
-                const est1rm = parseInt(w.estimated_1rm);
-                if (!dayData[day]) dayData[day] = [];
-                dayData[day].push(est1rm);
-            });
-
-            // Calculate daily max
-            const dataPoints = Object.entries(dayData)
-                .map(([day, values]) => ({
-                    day: parseInt(day),
-                    max: Math.max(...values),
-                    avg: values.reduce((a, b) => a + b, 0) / values.length
-                }))
-                .sort((a, b) => a.day - b.day);
-
-            if (dataPoints.length === 0) {
-                ctx.fillStyle = '#606070';
-                ctx.font = '14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('No workout data available', canvas.width / 2, canvas.height / 2);
-                return;
-            }
-
-            // Chart dimensions
-            const padding = { top: 20, right: 20, bottom: 40, left: 60 };
-            const chartWidth = canvas.width - padding.left - padding.right;
-            const chartHeight = canvas.height - padding.top - padding.bottom;
-
-            // Scale
-            const minDay = Math.min(...dataPoints.map(d => d.day));
-            const maxDay = Math.max(...dataPoints.map(d => d.day), 60);
-            const minVal = Math.min(...dataPoints.map(d => d.max)) * 0.95;
-            const maxVal = Math.max(...dataPoints.map(d => d.max), FITLOG_API.predict1RM(slope, base, maxDay)) * 1.05;
-
-            const scaleX = day => padding.left + ((day - minDay) / (maxDay - minDay)) * chartWidth;
-            const scaleY = val => padding.top + chartHeight - ((val - minVal) / (maxVal - minVal)) * chartHeight;
-
-            // Clear canvas
-            ctx.fillStyle = '#1a1a24';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Grid lines
-            ctx.strokeStyle = '#2a2a3a';
-            ctx.lineWidth = 1;
-            for (let i = 0; i <= 5; i++) {
-                const y = padding.top + (chartHeight / 5) * i;
-                ctx.beginPath();
-                ctx.moveTo(padding.left, y);
-                ctx.lineTo(canvas.width - padding.right, y);
-                ctx.stroke();
-
-                // Y-axis labels
-                const value = maxVal - ((maxVal - minVal) / 5) * i;
-                ctx.fillStyle = '#606070';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'right';
-                ctx.fillText(Math.round(value) + ' lbs', padding.left - 8, y + 4);
-            }
-
-            // X-axis labels
-            ctx.textAlign = 'center';
-            for (let day = minDay; day <= maxDay; day += Math.ceil((maxDay - minDay) / 6)) {
-                ctx.fillText('Day ' + day, scaleX(day), canvas.height - 10);
-            }
-
-            // Draw predicted line (fitted model)
-            ctx.strokeStyle = '#7c3aed';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath();
-            for (let day = minDay; day <= maxDay; day++) {
-                const pred = FITLOG_API.predict1RM(slope, base, day);
-                const x = scaleX(day);
-                const y = scaleY(pred);
-                if (day === minDay) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            // Draw actual data points
-            ctx.fillStyle = '#00d4ff';
-            dataPoints.forEach(point => {
-                const x = scaleX(point.day);
-                const y = scaleY(point.max);
-                ctx.beginPath();
-                ctx.arc(x, y, 5, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Connect actual points with line
-            ctx.strokeStyle = '#00d4ff';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            dataPoints.forEach((point, i) => {
-                const x = scaleX(point.day);
-                const y = scaleY(point.max);
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            });
-            ctx.stroke();
-        }
-
-        // Redraw on resize
-        window.addEventListener('resize', loadExerciseDetail);
-
         (async () => {
             await requireAuth();
+            const unit = window.FITLOG_UNIT || 'lbs';
+            document.getElementById('unit-1').textContent = unit;
+            document.getElementById('unit-2').textContent = unit + '/day';
+            document.getElementById('unit-3').textContent = unit;
+            document.getElementById('goal-unit').textContent = unit;
+
+            const exerciseId = getUrlParam('name') || 'bench_press';
+            const exerciseInfo = EXERCISES[exerciseId] || { name: exerciseId, icon: '🏋️' };
+            let slope = 0, base = 0, currentDay = 1;
+
+            async function loadExerciseDetail() {
+                document.getElementById('exercise-name').textContent = exerciseInfo.name;
+                document.getElementById('exercise-icon').textContent = exerciseInfo.icon;
+                document.getElementById('history-link').href = `./history.html?exercise=${exerciseId}`;
+                document.title = `${exerciseInfo.name} - FitLog`;
+
+                try {
+                    const [model, workoutsData] = await Promise.all([
+                        FITLOG_API.getModel(exerciseId),
+                        FITLOG_API.getWorkouts(exerciseId, 500)
+                    ]);
+
+                    const workouts = workoutsData.records || [];
+                    slope = parseFloat(model?.param_a) || 0;
+                    base = parseFloat(model?.param_b) || 0;
+                    const r2 = parseFloat(model?.r_squared) || 0;
+
+                    const allDays = workouts.map(w => parseInt(w.day_number, 10)).filter(n => !isNaN(n));
+                    currentDay = allDays.length ? Math.max(...allDays) : 1;
+
+                    document.getElementById('current-1rm').textContent = FITLOG_API.toDisplay(slope * currentDay + base, unit);
+                    document.getElementById('daily-gain').textContent = (unit === 'kg' ? slope / 2.2046226218 : slope).toFixed(3);
+                    document.getElementById('base-1rm').textContent = FITLOG_API.toDisplay(base, unit);
+                    document.getElementById('total-sets').textContent = workouts.length;
+
+                    if (r2 > 0) {
+                        const el = document.getElementById('r2-badge');
+                        el.textContent = `R² ${r2.toFixed(2)}`;
+                        el.style.display = '';
+                        el.title = 'Goodness of fit — 1.00 is perfect, 0.00 is no explanatory power';
+                    }
+
+                    // Projections cap at 60 days — linear fit goes nonsense past that.
+                    const projections = [
+                        { days: 7, label: '1-Week' },
+                        { days: 14, label: '2-Week' },
+                        { days: 30, label: '30-Day' },
+                        { days: 60, label: '60-Day' }
+                    ];
+                    document.getElementById('projections').innerHTML = projections.map(p => {
+                        const predicted = FITLOG_API.toDisplay(slope * (currentDay + p.days) + base, unit);
+                        return `<div class="projection-badge">${p.label}: <strong>${predicted} ${unit}</strong></div>`;
+                    }).join('');
+
+                    drawChart(workouts, slope, base, unit);
+                    loadGoals();
+                } catch (error) {
+                    console.error('Error loading exercise detail:', error);
+                }
+            }
+
+            function daysToTarget(targetLbs) {
+                if (slope <= 0) return null;
+                const d = (targetLbs - base) / slope - currentDay;
+                if (!isFinite(d) || d < 0) return null;
+                return Math.ceil(d);
+            }
+
+            async function loadGoals() {
+                const active = document.getElementById('goal-active');
+                const res = await FITLOG_API.getGoals(exerciseId);
+                const goal = (res.records || []).find(g => (g.status || '').trim() === 'active');
+                if (!goal) { active.style.display = 'none'; return; }
+
+                const targetLbs = parseFloat(goal.target_weight);
+                const targetDate = goal.target_date.trim();
+                const targetDisplay = FITLOG_API.toDisplay(targetLbs, unit);
+
+                const daysNeeded = daysToTarget(targetLbs);
+                const projectedAtTarget = (() => {
+                    const t = new Date(targetDate);
+                    const start = new Date('2026-01-01');
+                    const targetDay = Math.floor((t - start) / (86400 * 1000)) + 1;
+                    return slope * targetDay + base;
+                })();
+
+                const onTrack = projectedAtTarget >= targetLbs;
+                const badge = onTrack
+                    ? '<span class="badge badge-success">on track</span>'
+                    : '<span class="badge badge-warn">behind</span>';
+
+                const etaMsg = daysNeeded === null
+                    ? 'Goal may not be reachable at current slope.'
+                    : `At current pace, you'll hit ${targetDisplay} ${unit} in ~${daysNeeded} days.`;
+
+                active.innerHTML = `
+                    <div class="goal-summary">
+                        <div><strong>${targetDisplay} ${unit}</strong> by <strong>${targetDate}</strong></div>
+                        <div class="goal-sub">${etaMsg}</div>
+                        <div class="goal-sub">Projected on that date: <strong>${FITLOG_API.toDisplay(projectedAtTarget, unit)} ${unit}</strong> ${badge}</div>
+                    </div>
+                    <button id="goal-clear" class="btn btn-link">Clear goal</button>
+                `;
+                active.style.display = '';
+
+                document.getElementById('goal-clear').addEventListener('click', async () => {
+                    await FITLOG_API.deleteGoal(goal.goal_id.trim());
+                    loadGoals();
+                });
+            }
+
+            document.getElementById('goal-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const tw = document.getElementById('goal-target').value;
+                const td = document.getElementById('goal-date').value;
+                if (!tw || !td) return;
+                const lbs = FITLOG_API.toLbs(tw, unit);
+                await FITLOG_API.addGoal({ exercise: exerciseId, target_weight: lbs, target_date: td });
+                document.getElementById('goal-target').value = '';
+                document.getElementById('goal-date').value = '';
+                loadGoals();
+            });
+
+            function drawChart(workouts, slope, base, unit) {
+                const canvas = document.getElementById('progressChart');
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.parentElement.getBoundingClientRect();
+                canvas.width = rect.width - 48;
+                canvas.height = 300;
+
+                const dayData = {};
+                workouts.forEach(w => {
+                    const day = parseInt(w.day_number);
+                    const est1rm = parseInt(w.estimated_1rm);
+                    if (!dayData[day]) dayData[day] = [];
+                    dayData[day].push(est1rm);
+                });
+
+                const dataPoints = Object.entries(dayData)
+                    .map(([day, values]) => ({
+                        day: parseInt(day),
+                        max: Math.max(...values),
+                        avg: values.reduce((a, b) => a + b, 0) / values.length
+                    }))
+                    .sort((a, b) => a.day - b.day);
+
+                if (dataPoints.length === 0) {
+                    ctx.fillStyle = '#606070';
+                    ctx.font = '14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('No workout data available', canvas.width / 2, canvas.height / 2);
+                    return;
+                }
+
+                const padding = { top: 20, right: 20, bottom: 40, left: 60 };
+                const chartWidth = canvas.width - padding.left - padding.right;
+                const chartHeight = canvas.height - padding.top - padding.bottom;
+
+                const minDay = Math.min(...dataPoints.map(d => d.day));
+                const maxDay = Math.max(...dataPoints.map(d => d.day), minDay + 60);
+                const display = v => FITLOG_API.toDisplay(v, unit);
+                const minValLbs = Math.min(...dataPoints.map(d => d.max)) * 0.95;
+                const maxValLbs = Math.max(...dataPoints.map(d => d.max), slope * maxDay + base) * 1.05;
+
+                const scaleX = day => padding.left + ((day - minDay) / (maxDay - minDay)) * chartWidth;
+                const scaleY = valLbs => padding.top + chartHeight - ((valLbs - minValLbs) / (maxValLbs - minValLbs)) * chartHeight;
+
+                ctx.fillStyle = '#1a1a24';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.strokeStyle = '#2a2a3a';
+                ctx.lineWidth = 1;
+                for (let i = 0; i <= 5; i++) {
+                    const y = padding.top + (chartHeight / 5) * i;
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, y);
+                    ctx.lineTo(canvas.width - padding.right, y);
+                    ctx.stroke();
+                    const valLbs = maxValLbs - ((maxValLbs - minValLbs) / 5) * i;
+                    ctx.fillStyle = '#606070';
+                    ctx.font = '11px sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`${display(valLbs)} ${unit}`, padding.left - 8, y + 4);
+                }
+
+                ctx.textAlign = 'center';
+                for (let day = minDay; day <= maxDay; day += Math.ceil((maxDay - minDay) / 6)) {
+                    ctx.fillText('Day ' + day, scaleX(day), canvas.height - 10);
+                }
+
+                ctx.strokeStyle = '#7c3aed';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                for (let day = minDay; day <= maxDay; day++) {
+                    const pred = slope * day + base;
+                    const x = scaleX(day);
+                    const y = scaleY(pred);
+                    if (day === minDay) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = '#00d4ff';
+                dataPoints.forEach(point => {
+                    const x = scaleX(point.day);
+                    const y = scaleY(point.max);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                ctx.strokeStyle = '#00d4ff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                dataPoints.forEach((point, i) => {
+                    const x = scaleX(point.day);
+                    const y = scaleY(point.max);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            window.addEventListener('resize', loadExerciseDetail);
             loadExerciseDetail();
         })();
     </script>

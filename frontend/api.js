@@ -1,31 +1,24 @@
 // FitLog API Helper
 //
-// Auth model:
-//   - Data calls (/query, /insert-record, /run) go through chaprolaAuth.fetch(),
-//     which attaches the user's Bearer chp_user_... token. R4 handler-side
-//     scoping auto-injects WHERE user_id=<sub> on queries and auto-stamps
-//     user_id on inserts — server-side enforcement.
-//   - The client still passes user_id explicitly in where/record as belt-and-
-//     suspenders (R4 accepts matching filter as a no-op; mismatch would 403).
-//   - Published reports (/report) are not on the user-token allowlist today,
-//     so they're unauthenticated and rely on PARAM.user_id filtering inside
-//     the published program (HISTORY_STATS does this).
-//   - "Continue as guest" logs in the shared guest account (credentials below).
-//
-// GUEST_USER_ID is the canonical sub of the shared guest account that owns the
-// sample workouts + fitted models. Anyone who clicks "Continue as guest" logs
-// into this account.
+// Auth model (post-R4):
+//   - Data calls go through chaprolaAuth.fetch() → Bearer chp_user_... token.
+//     R4 auto-injects WHERE user_id=<sub> on queries and auto-stamps user_id
+//     on inserts/upserts. The client still passes user_id explicitly in
+//     where/record as belt-and-suspenders (R4 accepts matching filter).
+//   - Published /report endpoints are unauthenticated today; we pass
+//     PARAM.user_id in the URL so HISTORY_STATS filters server-side.
+//   - "Continue as guest" logs into a shared guest account that owns the
+//     sample workouts + fitted models.
 
 const GUEST_USER_ID = 'usr_1775958bb67a70c56ed189fcae6fe65d';
 const GUEST_EMAIL = 'guest-fitlog@chaprola.org';
 const GUEST_PASSWORD = '2PZ3a8wXv6HuJ9nQ5kMr4LgTy7BcDe';
 
-// Stripe Payment Link for the $5 "Support fitlog" tip-jar. Set by Charles in
-// the Stripe dashboard (Payment Links → create link for the "unlock" product).
-// Empty = button is hidden. Full browser-initiated /payments/checkout requires
-// either a site-key-accepting endpoint or a public /payments/donate — neither
-// exists today (routed to Tawni). Payment Link is the v1 workaround.
+// Stripe Payment Link for the $5 "Support fitlog" tip-jar.
+// Empty = button hidden. Set this to a real Payment Link URL once one exists.
 const TIP_URL = '';
+
+const LBS_PER_KG = 2.2046226218;
 
 const FITLOG_API = {
     BASE: 'https://api.chaprola.org',
@@ -79,22 +72,26 @@ const FITLOG_API = {
         return this.query('models');
     },
 
-    // Get workouts for the current user, optionally filtered by exercise.
-    // Ordered by date (ISO YYYY-MM-DD sorts correctly as a string, unlike day_number).
-    async getWorkouts(exercise = null, limit = 100) {
+    // Exercise match uses EQ (not CONTAINS) so "bench_press" does not also match
+    // a future "incline_bench_press". Exercise strings are fixed-width padded in
+    // the .F file; when the caller passes "bench_press" unpadded, Chaprola's
+    // EQ operator does a trimmed-comparison under the hood. Verified against
+    // HISTORY_STATS.CS 2026-04-20.
+    async getWorkouts(exercise = null, limit = 100, offset = 0) {
         const options = {
             order_by: [{ field: 'date', dir: 'desc' }],
-            limit
+            limit,
+            offset
         };
         if (exercise) {
-            options.where = [{ field: 'exercise', op: 'contains', value: exercise }];
+            options.where = [{ field: 'exercise', op: 'eq', value: exercise }];
         }
         return this.query('workouts', options);
     },
 
     async getModel(exercise) {
         const result = await this.query('models', {
-            where: [{ field: 'exercise', op: 'contains', value: exercise }],
+            where: [{ field: 'exercise', op: 'eq', value: exercise }],
             limit: 1
         });
         return result.records && result.records[0];
@@ -106,6 +103,38 @@ const FITLOG_API = {
             userid: this.USERID,
             project: this.PROJECT,
             file,
+            record: scoped
+        });
+    },
+
+    async updateRecord(file, where, fields) {
+        // Endpoint uses "set" (not "update") for the patch payload — per
+        // POST /update-record in chaprola_help. "update" is a common misname.
+        return this._post('/update-record', {
+            userid: this.USERID,
+            project: this.PROJECT,
+            file,
+            where,
+            set: fields
+        });
+    },
+
+    async deleteRecord(file, where) {
+        return this._post('/delete-record', {
+            userid: this.USERID,
+            project: this.PROJECT,
+            file,
+            where
+        });
+    },
+
+    async upsertRecord(file, key, record) {
+        const scoped = { ...record, user_id: this.currentUserId() };
+        return this._post('/upsert-record', {
+            userid: this.USERID,
+            project: this.PROJECT,
+            file,
+            key,
             record: scoped
         });
     },
@@ -123,29 +152,126 @@ const FITLOG_API = {
         return slope * day + base;
     },
 
+    // Analytical ordinary-least-squares linear regression over the current
+    // user's workouts for one exercise. Returns { slope, base, r_squared, n }
+    // or null if fewer than 2 points. Closed-form solution; no HULDRA round-
+    // trip. HULDRA path via /optimize is blocked on R4 allowlist extension
+    // (see remo inbox 2026-04-20_r4_optimize_allowlist.md); switch when live.
+    async refitModel(exercise) {
+        const res = await this.getWorkouts(exercise, 1000);
+        const rows = (res.records || [])
+            .map(w => ({ day: parseInt(w.day_number, 10), y: parseInt(w.estimated_1rm, 10) }))
+            .filter(p => !isNaN(p.day) && !isNaN(p.y) && p.day > 0 && p.y > 0);
+
+        const n = rows.length;
+        if (n < 2) return null;
+
+        let sx = 0, sy = 0, sxy = 0, sxx = 0;
+        for (const p of rows) { sx += p.day; sy += p.y; sxy += p.day * p.y; sxx += p.day * p.day; }
+
+        const denom = n * sxx - sx * sx;
+        if (denom === 0) return null;
+
+        const slope = (n * sxy - sx * sy) / denom;
+        const base = (sy - slope * sx) / n;
+
+        const yMean = sy / n;
+        let ssr = 0, tss = 0;
+        for (const p of rows) {
+            const pred = slope * p.day + base;
+            ssr += (p.y - pred) * (p.y - pred);
+            tss += (p.y - yMean) * (p.y - yMean);
+        }
+        const r_squared = tss > 0 ? Math.max(0, 1 - ssr / tss) : 1;
+
+        const today = new Date().toISOString().slice(0, 10);
+        await this.upsertRecord('models', 'exercise', {
+            exercise,
+            param_a: slope.toFixed(3),
+            param_b: base.toFixed(1),
+            r_squared: r_squared.toFixed(2),
+            last_updated: today
+        });
+
+        return { slope, base, r_squared, n };
+    },
+
+    async weeklySummary() {
+        const sub = this.currentUserId();
+        const body = {
+            userid: this.USERID, project: this.PROJECT, file: 'workouts',
+            where: [
+                { field: 'user_id', op: 'eq', value: sub },
+                { field: 'date', op: 'date_within', value: '7d' }
+            ],
+            // Cookbook Recipe 21a shape: { field: [funcs] }. Response comes back
+            // as aggregates.<field>.<func>.
+            aggregate: { workout_id: ['count'] }
+        };
+        return this._post('/query', body);
+    },
+
+    // Goals CRUD
+    async getGoals(exercise = null) {
+        const extra = exercise ? [{ field: 'exercise', op: 'eq', value: exercise }] : null;
+        return this.query('goals', extra ? { where: extra, order_by: [{field:'created', dir:'desc'}] } : { order_by: [{field:'created', dir:'desc'}] });
+    },
+
+    async addGoal({ exercise, target_weight, target_date }) {
+        return this.insertRecord('goals', {
+            goal_id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/-/g, '').slice(0, 36),
+            exercise,
+            target_weight: String(target_weight),
+            target_date,
+            created: new Date().toISOString().slice(0, 10),
+            status: 'active'
+        });
+    },
+
+    async deleteGoal(goal_id) {
+        return this.deleteRecord('goals', { goal_id });
+    },
+
+    // Preferences
+    async getUnit() {
+        const res = await this.query('preferences', { limit: 1 });
+        const r = res.records && res.records[0];
+        return (r && r.unit && r.unit.trim()) || 'lbs';
+    },
+
+    async setUnit(unit) {
+        return this.upsertRecord('preferences', 'user_id', { unit });
+    },
+
+    // Unit conversion (canonical storage is lbs; display converts)
+    toDisplay(weightLbs, unit) {
+        const n = typeof weightLbs === 'string' ? parseFloat(weightLbs) : weightLbs;
+        if (unit === 'kg') return Math.round(n / LBS_PER_KG * 10) / 10;
+        return Math.round(n);
+    },
+
+    toLbs(weight, unit) {
+        const n = typeof weight === 'string' ? parseFloat(weight) : weight;
+        if (unit === 'kg') return Math.round(n * LBS_PER_KG);
+        return Math.round(n);
+    },
+
     parseReportTable(output) {
         const lines = output.split('\n');
         const rows = [];
         let inData = false;
-
         for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed.startsWith('---')) {
-                inData = true;
-                continue;
-            }
+            if (trimmed.startsWith('---')) { inData = true; continue; }
             if (inData && trimmed) {
                 const parts = trimmed.split(/\s+/).filter(Boolean);
-                if (parts.length >= 2) {
-                    rows.push(parts);
-                }
+                if (parts.length >= 2) rows.push(parts);
             }
         }
         return rows;
     }
 };
 
-// Exercise metadata
 const EXERCISES = {
     bench_press: { name: 'Bench Press', icon: '🏋️' },
     squat: { name: 'Squat', icon: '🦵' },
@@ -168,11 +294,6 @@ function getUrlParam(name) {
 }
 
 // Auth helpers ---------------------------------------------------------------
-//
-// requireAuth() is called on every fitlog page at load time. If the user is
-// not authenticated, it injects the login card into the <main> container and
-// halts further page JS via the returned promise (never resolves until login).
-// Returns a promise that resolves with the logged-in user once auth is set.
 
 function _renderLoginCard() {
     const main = document.querySelector('main') || document.body;
@@ -198,32 +319,21 @@ function _renderLoginCard() {
     `;
 
     const msg = document.getElementById('auth-msg');
-    const showMsg = (t, ok) => {
-        msg.textContent = t;
-        msg.className = 'auth-msg ' + (ok ? 'ok' : 'err');
-    };
+    const showMsg = (t, ok) => { msg.textContent = t; msg.className = 'auth-msg ' + (ok ? 'ok' : 'err'); };
 
     document.getElementById('auth-login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
         showMsg('Signing in...', true);
-        try {
-            await window.chaprolaAuth.login({ email, password });
-            window.location.reload();
-        } catch (err) {
-            showMsg(err.message || 'Login failed', false);
-        }
+        try { await window.chaprolaAuth.login({ email, password }); window.location.reload(); }
+        catch (err) { showMsg(err.message || 'Login failed', false); }
     });
 
     document.getElementById('auth-guest-btn').addEventListener('click', async () => {
         showMsg('Logging in as guest...', true);
-        try {
-            await window.chaprolaAuth.login({ email: GUEST_EMAIL, password: GUEST_PASSWORD });
-            window.location.reload();
-        } catch (err) {
-            showMsg(err.message || 'Guest login failed', false);
-        }
+        try { await window.chaprolaAuth.login({ email: GUEST_EMAIL, password: GUEST_PASSWORD }); window.location.reload(); }
+        catch (err) { showMsg(err.message || 'Guest login failed', false); }
     });
 
     document.getElementById('auth-signup-btn').addEventListener('click', () => {
@@ -238,38 +348,47 @@ function _renderUserChip() {
     if (existing) existing.remove();
 
     const u = window.chaprolaAuth.getUser();
-    const label = u.sub === GUEST_USER_ID
-        ? 'Guest'
-        : (u.display_name || u.email);
+    const label = u.sub === GUEST_USER_ID ? 'Guest' : (u.display_name || u.email);
 
     const chip = document.createElement('div');
     chip.id = 'user-chip';
     chip.innerHTML = `
         <span class="user-chip-label">${label}</span>
+        <select id="user-chip-unit" class="user-chip-unit" title="Display unit">
+            <option value="lbs">lbs</option>
+            <option value="kg">kg</option>
+        </select>
         <button id="user-chip-logout" class="btn btn-link">Log out</button>
     `;
     nav.appendChild(chip);
+
+    FITLOG_API.getUnit().then(unit => {
+        window.FITLOG_UNIT = unit;
+        document.getElementById('user-chip-unit').value = unit;
+    });
+
+    document.getElementById('user-chip-unit').addEventListener('change', async (e) => {
+        const unit = e.target.value;
+        await FITLOG_API.setUnit(unit);
+        window.FITLOG_UNIT = unit;
+        window.location.reload();
+    });
+
     document.getElementById('user-chip-logout').addEventListener('click', async () => {
         await window.chaprolaAuth.logout();
         window.location.reload();
     });
 }
 
-// Gate the page on authentication. Call this at the top of each page's script.
-// Returns a promise that resolves when the user is authenticated; never resolves
-// if the user stays on the login card (caller's page JS should wait on this).
 function requireAuth() {
     return new Promise((resolve) => {
-        if (!window.chaprolaAuth) {
-            console.error('chaprolaAuth not loaded');
-            return;
-        }
+        if (!window.chaprolaAuth) { console.error('chaprolaAuth not loaded'); return; }
         if (window.chaprolaAuth.isAuthenticated()) {
             _renderUserChip();
-            resolve(window.chaprolaAuth.getUser());
+            // Preload unit; pages can read window.FITLOG_UNIT (defaults to 'lbs')
+            FITLOG_API.getUnit().then(u => { window.FITLOG_UNIT = u; resolve(window.chaprolaAuth.getUser()); });
             return;
         }
         _renderLoginCard();
-        // never resolves — the user will either sign in (page reloads) or leave
     });
 }

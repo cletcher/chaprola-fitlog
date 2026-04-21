@@ -14,6 +14,7 @@
         <div class="nav-links">
             <a href="./index.html">Dashboard</a>
             <a href="./log.html" class="active">Log Workout</a>
+            <a href="./history.html">History</a>
         </div>
     </nav>
 
@@ -43,7 +44,7 @@
                 <label class="form-label" for="weight">Weight</label>
                 <div class="input-group">
                     <input type="number" id="weight" class="form-control" placeholder="185" min="0" step="5" required>
-                    <span class="input-suffix">lbs</span>
+                    <span class="input-suffix" id="weight-unit">lbs</span>
                 </div>
             </div>
 
@@ -65,17 +66,15 @@
             <button type="submit" class="btn btn-primary btn-large" style="width: 100%;">Log Set</button>
         </form>
 
-        <!-- Estimated 1RM Preview -->
         <div id="estimate-preview" class="form-section" style="display: none;">
             <h3 style="margin-bottom: 0.5rem;">Estimated 1RM</h3>
             <p class="subtitle" style="margin-bottom: 1rem;">Based on Epley formula</p>
             <div style="text-align: center;">
                 <span id="estimated-1rm" class="stat-value">--</span>
-                <span class="stat-unit">lbs</span>
+                <span class="stat-unit" id="estimate-unit">lbs</span>
             </div>
         </div>
 
-        <!-- Recent Sets -->
         <div class="form-section">
             <h3 style="margin-bottom: 1rem;">Recent Sets</h3>
             <div id="recent-loading" class="loading">Loading...</div>
@@ -97,134 +96,119 @@
     <script src="./api.js"></script>
     <script>
         (async () => {
-        await requireAuth();
+            await requireAuth();
+            const unit = window.FITLOG_UNIT || 'lbs';
+            document.getElementById('weight-unit').textContent = unit;
+            document.getElementById('estimate-unit').textContent = unit;
 
-        // Set default date to today
-        document.getElementById('date').valueAsDate = new Date();
+            // Default date = today, in user's local timezone
+            document.getElementById('date').valueAsDate = new Date();
 
-        // Calculate and show estimated 1RM as user types
-        const weightInput = document.getElementById('weight');
-        const repsInput = document.getElementById('reps');
-        const estimatePreview = document.getElementById('estimate-preview');
-        const estimatedValue = document.getElementById('estimated-1rm');
+            const weightInput = document.getElementById('weight');
+            const repsInput = document.getElementById('reps');
+            const estimatePreview = document.getElementById('estimate-preview');
+            const estimatedValue = document.getElementById('estimated-1rm');
 
-        function updateEstimate() {
-            const weight = parseFloat(weightInput.value);
-            const reps = parseInt(repsInput.value);
-
-            if (weight > 0 && reps > 0) {
-                const est1rm = epley1RM(weight, reps);
-                estimatedValue.textContent = est1rm;
-                estimatePreview.style.display = 'block';
-            } else {
-                estimatePreview.style.display = 'none';
+            function updateEstimate() {
+                const w = parseFloat(weightInput.value);
+                const r = parseInt(repsInput.value);
+                if (w > 0 && r > 0) {
+                    // Epley on the entered values — display unit matches input unit
+                    estimatedValue.textContent = epley1RM(w, r);
+                    estimatePreview.style.display = 'block';
+                } else {
+                    estimatePreview.style.display = 'none';
+                }
             }
-        }
+            weightInput.addEventListener('input', updateEstimate);
+            repsInput.addEventListener('input', updateEstimate);
 
-        weightInput.addEventListener('input', updateEstimate);
-        repsInput.addEventListener('input', updateEstimate);
-
-        // Load recent sets
-        async function loadRecentSets() {
-            try {
-                const data = await FITLOG_API.getWorkouts(null, 10);
-                const tbody = document.getElementById('recent-tbody');
-
-                tbody.innerHTML = data.records.map(w => `
-                    <tr>
-                        <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
-                        <td>${w.weight.trim()} lbs</td>
-                        <td>${w.reps.trim()}</td>
-                        <td>${w.estimated_1rm.trim()} lbs</td>
-                    </tr>
-                `).join('');
-
-                document.getElementById('recent-loading').style.display = 'none';
-                document.getElementById('recent-table').style.display = 'table';
-            } catch (error) {
-                console.error('Error loading recent sets:', error);
-                document.getElementById('recent-loading').textContent = 'Error loading data';
+            async function loadRecentSets() {
+                try {
+                    const data = await FITLOG_API.getWorkouts(null, 10);
+                    const tbody = document.getElementById('recent-tbody');
+                    tbody.innerHTML = (data.records || []).map(w => `
+                        <tr>
+                            <td>${EXERCISES[w.exercise.trim()]?.name || w.exercise}</td>
+                            <td>${FITLOG_API.toDisplay(w.weight, unit)} ${unit}</td>
+                            <td>${String(w.reps).trim()}</td>
+                            <td>${FITLOG_API.toDisplay(w.estimated_1rm, unit)} ${unit}</td>
+                        </tr>
+                    `).join('');
+                    document.getElementById('recent-loading').style.display = 'none';
+                    document.getElementById('recent-table').style.display = 'table';
+                } catch (error) {
+                    console.error('Error loading recent sets:', error);
+                    document.getElementById('recent-loading').textContent = 'Error loading data';
+                }
             }
-        }
 
-        // Form submission
-        document.getElementById('workout-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
+            document.getElementById('workout-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const alertContainer = document.getElementById('alert-container');
+                const exercise = document.getElementById('exercise').value;
+                const weightInput = document.getElementById('weight').value;
+                const reps = document.getElementById('reps').value;
+                const date = document.getElementById('date').value;
+                const notes = document.getElementById('notes').value;
 
-            const alertContainer = document.getElementById('alert-container');
-            const exercise = document.getElementById('exercise').value;
-            const weight = document.getElementById('weight').value;
-            const reps = document.getElementById('reps').value;
-            const date = document.getElementById('date').value;
-            const notes = document.getElementById('notes').value;
+                // Canonical storage is lbs; convert display-entered values back.
+                const weightLbs = FITLOG_API.toLbs(weightInput, unit);
 
-            // Calculate day number (days since Jan 1, 2026)
-            const startDate = new Date('2026-01-01');
-            const workoutDate = new Date(date);
-            const dayNumber = Math.floor((workoutDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                // Day number from Jan 1, 2026 (canonical epoch for fitted-model day axis)
+                const startDate = new Date('2026-01-01');
+                const workoutDate = new Date(date);
+                const dayNumber = Math.floor((workoutDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                const est1rm = epley1RM(weightLbs, parseInt(reps));
 
-            // Calculate estimated 1RM
-            const est1rm = epley1RM(parseFloat(weight), parseInt(reps));
+                // Collision-free ID via crypto.randomUUID, truncated to the 12-char field width
+                const workoutId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/-/g, '').slice(0, 12);
 
-            // Generate workout ID
-            const workoutId = Date.now().toString().slice(-12).padStart(12, '0');
+                const record = {
+                    workout_id: workoutId,
+                    exercise,
+                    weight: String(weightLbs),
+                    reps: String(reps),
+                    date,
+                    day_number: String(dayNumber),
+                    estimated_1rm: String(est1rm),
+                    notes: notes || ''
+                };
 
-            // Prepare record
-            const record = {
-                workout_id: workoutId,
-                exercise: exercise,
-                weight: weight,
-                reps: reps,
-                date: date,
-                day_number: String(dayNumber),
-                estimated_1rm: String(est1rm),
-                notes: notes || ''
-            };
+                try {
+                    const result = await FITLOG_API.insertRecord('workouts', record);
+                    if (result.status === 'ok') {
+                        alertContainer.innerHTML = `
+                            <div class="alert alert-success">
+                                <strong>Set logged!</strong><br>
+                                ${EXERCISES[exercise]?.name}: ${FITLOG_API.toDisplay(weightLbs, unit)} ${unit} × ${reps} reps (Est. 1RM: ${FITLOG_API.toDisplay(est1rm, unit)} ${unit})
+                                <br><small>Day ${dayNumber} — ${date}</small>
+                            </div>
+                        `;
+                        document.getElementById('exercise').value = '';
+                        document.getElementById('weight').value = '';
+                        document.getElementById('reps').value = '';
+                        document.getElementById('notes').value = '';
+                        estimatePreview.style.display = 'none';
 
-            // Insert the record via Chaprola API
-            try {
-                const result = await FITLOG_API.insertRecord('workouts', record);
+                        // Refit the per-user model analytically (OLS). Upserts models.DA.
+                        FITLOG_API.refitModel(exercise).catch(err => console.warn('refit failed:', err));
 
-                if (result.status === 'ok') {
+                        loadRecentSets();
+                    } else {
+                        throw new Error(result.message || 'Failed to log workout');
+                    }
+                } catch (error) {
                     alertContainer.innerHTML = `
-                        <div class="alert alert-success">
-                            <strong>Set logged successfully!</strong><br>
-                            ${EXERCISES[exercise]?.name}: ${weight} lbs x ${reps} reps (Est. 1RM: ${est1rm} lbs)
-                            <br><small>Day ${dayNumber} - ${date}</small>
+                        <div class="alert alert-error">
+                            <strong>Error logging workout:</strong><br>${error.message}
                         </div>
                     `;
-
-                    // Reset form
-                    document.getElementById('exercise').value = '';
-                    document.getElementById('weight').value = '';
-                    document.getElementById('reps').value = '';
-                    document.getElementById('notes').value = '';
-                    estimatePreview.style.display = 'none';
-
-                    // Refit the per-user model for this exercise. Fire-and-forget —
-                    // the user doesn't need to wait on the refit to log the next set.
-                    FITLOG_API.runProgram('OPTIMIZE_MODEL', { exercise })
-                        .catch(err => console.warn('Model refit failed:', err));
-
-                    // Reload recent sets
-                    loadRecentSets();
-                } else {
-                    throw new Error(result.message || 'Failed to log workout');
                 }
-            } catch (error) {
-                alertContainer.innerHTML = `
-                    <div class="alert alert-error">
-                        <strong>Error logging workout:</strong><br>
-                        ${error.message}
-                    </div>
-                `;
-            }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
 
-            // Scroll to top to show alert
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-
-        loadRecentSets();
+            loadRecentSets();
         })();
     </script>
 </body>
