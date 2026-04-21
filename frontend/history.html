@@ -195,12 +195,23 @@
 
         function renderPage(rows) {
             const tbody = document.getElementById('history-tbody');
+            const isGuest = FITLOG_API.isGuest();
             tbody.innerHTML = rows.map(w => {
                 const id = (w.workout_id || '').trim();
                 const exKey = w.exercise.trim();
                 const name = EXERCISES[exKey]?.name || w.exercise;
                 const date = (w.date || '').trim();
                 const notes = w.notes || '';
+                const actions = isGuest ? '' : `
+                    <button class="btn btn-link edit-btn"
+                        data-id="${esc(id)}"
+                        data-exercise="${esc(exKey)}"
+                        data-weight="${esc(String(w.weight).trim())}"
+                        data-reps="${esc(String(w.reps).trim())}"
+                        data-date="${esc(date)}"
+                        data-notes="${esc(notes)}">Edit</button>
+                    <button class="btn btn-link delete-btn" data-id="${esc(id)}" data-exercise="${esc(exKey)}">Delete</button>
+                `;
                 return `
                     <tr data-workout-id="${esc(id)}">
                         <td>${esc(date)}</td>
@@ -209,16 +220,7 @@
                         <td>${FITLOG_API.toDisplay(w.weight, unit)} ${esc(unit)}</td>
                         <td>${esc(String(w.reps).trim())}</td>
                         <td>${FITLOG_API.toDisplay(w.estimated_1rm, unit)} ${esc(unit)}</td>
-                        <td class="row-actions">
-                            <button class="btn btn-link edit-btn"
-                                data-id="${esc(id)}"
-                                data-exercise="${esc(exKey)}"
-                                data-weight="${esc(String(w.weight).trim())}"
-                                data-reps="${esc(String(w.reps).trim())}"
-                                data-date="${esc(date)}"
-                                data-notes="${esc(notes)}">Edit</button>
-                            <button class="btn btn-link delete-btn" data-id="${esc(id)}" data-exercise="${esc(exKey)}">Delete</button>
-                        </td>
+                        <td class="row-actions">${actions}</td>
                     </tr>
                 `;
             }).join('');

@@ -97,7 +97,26 @@ const FITLOG_API = {
         return result.records && result.records[0];
     },
 
+    isGuest() {
+        return this.currentUserId() === GUEST_USER_ID;
+    },
+
+    // Read-only guard for the shared guest account (Dalf FINDING-005 fix,
+    // option a per Charles 2026-04-21). Guest can read everything but
+    // cannot write. Every write entry-point calls this first; UI layer also
+    // hides/replaces write affordances so the user never sees a dead
+    // button. This is app-level defense-in-depth — casual pollution is
+    // blocked here; an account-level read-only flag is a platform followup.
+    _guardWrite() {
+        if (this.isGuest()) {
+            const err = new Error('Guest accounts are read-only. Sign up to track your own workouts.');
+            err.guest_readonly = true;
+            throw err;
+        }
+    },
+
     async insertRecord(file, record) {
+        this._guardWrite();
         const scoped = { ...record, user_id: this.currentUserId() };
         return this._post('/insert-record', {
             userid: this.USERID,
@@ -110,6 +129,7 @@ const FITLOG_API = {
     async updateRecord(file, where, fields) {
         // Endpoint uses "set" (not "update") for the patch payload — per
         // POST /update-record in chaprola_help. "update" is a common misname.
+        this._guardWrite();
         return this._post('/update-record', {
             userid: this.USERID,
             project: this.PROJECT,
@@ -120,6 +140,7 @@ const FITLOG_API = {
     },
 
     async deleteRecord(file, where) {
+        this._guardWrite();
         return this._post('/delete-record', {
             userid: this.USERID,
             project: this.PROJECT,
@@ -129,6 +150,7 @@ const FITLOG_API = {
     },
 
     async upsertRecord(file, key, record) {
+        this._guardWrite();
         const scoped = { ...record, user_id: this.currentUserId() };
         return this._post('/upsert-record', {
             userid: this.USERID,
@@ -291,6 +313,23 @@ function esc(s) {
     }[c]));
 }
 
+// Return the "Sign up to track your own workouts" CTA markup for guest users.
+// Callers drop this into whatever container replaces a write control (the
+// log form, the goal form, the dashboard quick-action bar, etc.). The copy
+// is intentionally identical everywhere so the upsell reads as one message.
+function guestSignupCta(opts = {}) {
+    const headline = opts.headline || "You're exploring fitlog as a guest";
+    const body = opts.body || 'Sign up (free) to log your own workouts, fit your own model, and see your own progress curve.';
+    const returnTo = typeof window !== 'undefined' ? window.location.href : '';
+    return `
+        <div class="guest-cta">
+            <h3>${esc(headline)}</h3>
+            <p>${esc(body)}</p>
+            <a href="https://chaprola.org/signup/?return_to=${esc(encodeURIComponent(returnTo))}" class="btn btn-primary btn-large">Sign up</a>
+        </div>
+    `;
+}
+
 function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
 }
@@ -364,27 +403,36 @@ function _renderUserChip() {
 
     const chip = document.createElement('div');
     chip.id = 'user-chip';
+    const isGuest = u.sub === GUEST_USER_ID;
+    // Guest is read-only (per Dalf FINDING-005 fix, option a). Unit toggle
+    // writes to preferences.DA — guest can't persist a personal unit, so
+    // the dropdown is hidden for guest. Guest display stays in lbs.
     chip.innerHTML = `
         <span class="user-chip-label">${esc(label)}</span>
-        <select id="user-chip-unit" class="user-chip-unit" title="Display unit">
-            <option value="lbs">lbs</option>
-            <option value="kg">kg</option>
-        </select>
+        ${isGuest ? '' : `
+            <select id="user-chip-unit" class="user-chip-unit" title="Display unit">
+                <option value="lbs">lbs</option>
+                <option value="kg">kg</option>
+            </select>
+        `}
         <button id="user-chip-logout" class="btn btn-link">Log out</button>
     `;
     nav.appendChild(chip);
 
-    FITLOG_API.getUnit().then(unit => {
-        window.FITLOG_UNIT = unit;
-        document.getElementById('user-chip-unit').value = unit;
-    });
-
-    document.getElementById('user-chip-unit').addEventListener('change', async (e) => {
-        const unit = e.target.value;
-        await FITLOG_API.setUnit(unit);
-        window.FITLOG_UNIT = unit;
-        window.location.reload();
-    });
+    if (!isGuest) {
+        FITLOG_API.getUnit().then(unit => {
+            window.FITLOG_UNIT = unit;
+            document.getElementById('user-chip-unit').value = unit;
+        });
+        document.getElementById('user-chip-unit').addEventListener('change', async (e) => {
+            const unit = e.target.value;
+            await FITLOG_API.setUnit(unit);
+            window.FITLOG_UNIT = unit;
+            window.location.reload();
+        });
+    } else {
+        window.FITLOG_UNIT = 'lbs';
+    }
 
     document.getElementById('user-chip-logout').addEventListener('click', async () => {
         await window.chaprolaAuth.logout();
@@ -396,9 +444,19 @@ function requireAuth() {
     return new Promise((resolve) => {
         if (!window.chaprolaAuth) { console.error('chaprolaAuth not loaded'); return; }
         if (window.chaprolaAuth.isAuthenticated()) {
+            const u = window.chaprolaAuth.getUser();
+            // Tag <body> for CSS-level gating of write UI when guest is active.
+            if (u && u.sub === GUEST_USER_ID) {
+                document.body.classList.add('is-guest');
+            }
             _renderUserChip();
-            // Preload unit; pages can read window.FITLOG_UNIT (defaults to 'lbs')
-            FITLOG_API.getUnit().then(u => { window.FITLOG_UNIT = u; resolve(window.chaprolaAuth.getUser()); });
+            // Guest stays in lbs (no preferences.DA write). Non-guest loads their saved unit.
+            if (u && u.sub === GUEST_USER_ID) {
+                window.FITLOG_UNIT = 'lbs';
+                resolve(u);
+            } else {
+                FITLOG_API.getUnit().then(unit => { window.FITLOG_UNIT = unit; resolve(u); });
+            }
             return;
         }
         _renderLoginCard();

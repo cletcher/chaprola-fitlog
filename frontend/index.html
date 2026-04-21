@@ -31,10 +31,11 @@
             <div id="overview-grid" class="exercise-grid" style="display: none;"></div>
         </section>
 
-        <section class="quick-actions">
+        <section id="quick-actions" class="quick-actions">
             <a href="./log.html" class="btn btn-primary btn-large">Log New Workout</a>
             <a id="tip-jar-btn" class="btn btn-secondary btn-large" style="display:none;" target="_blank" rel="noopener">❤️ Support fitlog — $5</a>
         </section>
+        <section id="guest-cta-slot"></section>
     </main>
 
     <script src="https://chaprola.org/chaprola-auth.js"></script>
@@ -169,7 +170,11 @@
 
         (async () => {
             await requireAuth();
-            if (TIP_URL) {
+            if (FITLOG_API.isGuest()) {
+                // Replace the whole write-action bar with the sign-up CTA.
+                document.getElementById('quick-actions').style.display = 'none';
+                document.getElementById('guest-cta-slot').innerHTML = guestSignupCta();
+            } else if (TIP_URL) {
                 const btn = document.getElementById('tip-jar-btn');
                 btn.href = TIP_URL;
                 btn.style.display = '';

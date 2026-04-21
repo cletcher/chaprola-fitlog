@@ -86,6 +86,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Set Goal</button>
             </form>
+            <div id="goal-guest-cta"></div>
         </section>
 
         <div class="quick-actions">
@@ -100,6 +101,15 @@
         (async () => {
             await requireAuth();
             const unit = window.FITLOG_UNIT || 'lbs';
+            const isGuest = FITLOG_API.isGuest();
+            if (isGuest) {
+                // Goals are per-user writes — guest sees a sign-up CTA instead.
+                document.getElementById('goal-form').style.display = 'none';
+                document.getElementById('goal-guest-cta').innerHTML = guestSignupCta({
+                    headline: "Sign up to set a goal",
+                    body: "Guests see HULDRA's fit over the sample data. Create a free account to set your own target weight + date and watch your projection hit it."
+                });
+            }
             document.getElementById('unit-1').textContent = unit;
             document.getElementById('unit-2').textContent = unit + '/day';
             document.getElementById('unit-3').textContent = unit;

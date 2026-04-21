@@ -28,6 +28,8 @@
 
         <div id="alert-container"></div>
 
+        <section id="guest-cta-slot"></section>
+
         <form id="workout-form" class="form-section">
             <div class="form-group">
                 <label class="form-label" for="exercise">Exercise</label>
@@ -100,6 +102,20 @@
             const unit = window.FITLOG_UNIT || 'lbs';
             document.getElementById('weight-unit').textContent = unit;
             document.getElementById('estimate-unit').textContent = unit;
+
+            // Guest is read-only: replace the log form + estimate preview
+            // with the sign-up CTA. Recent Sets below still loads for reads.
+            if (FITLOG_API.isGuest()) {
+                document.getElementById('workout-form').style.display = 'none';
+                document.getElementById('estimate-preview').style.display = 'none';
+                document.getElementById('guest-cta-slot').innerHTML = guestSignupCta({
+                    headline: "Sign up to log workouts",
+                    body: "Guests can browse the sample data and see HULDRA's fitted curves. Create a free account to track your own sets."
+                });
+                // Still load Recent Sets so guest sees the sample activity.
+                await loadRecentSets();
+                return;
+            }
 
             // Default date = today, in user's local timezone
             document.getElementById('date').valueAsDate = new Date();
