@@ -42,6 +42,13 @@ const FITLOG_API = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
+        // Stale/expired token → drop the session so the login card re-renders
+        // instead of every page silently showing empty data (Vogel 2026-04-21).
+        if (response.status === 401) {
+            await window.chaprolaAuth.logout();
+            window.location.reload();
+            return new Promise(() => {});
+        }
         return response.json();
     },
 
@@ -174,37 +181,26 @@ const FITLOG_API = {
         return slope * day + base;
     },
 
-    // Analytical ordinary-least-squares linear regression over the current
-    // user's workouts for one exercise. Returns { slope, base, r_squared, n }
-    // or null if fewer than 2 points. Closed-form solution; no HULDRA round-
-    // trip. HULDRA path via /optimize is blocked on R4 allowlist extension
-    // (see remo inbox 2026-04-20_r4_optimize_allowlist.md); switch when live.
+    // Refit the per-user model for one exercise. Server computes the OLS
+    // via OPTIMIZE_MODEL.CS (/run scoped by chp_user_ token), client parses
+    // the pipe-delimited output and upserts models.DA. Fire-and-forget from
+    // the caller's perspective; insufficient data (n < 2) no-ops the upsert.
+    // Returns { slope, base, r_squared, n } or null.
     async refitModel(exercise) {
-        const res = await this.getWorkouts(exercise, 1000);
-        const rows = (res.records || [])
-            .map(w => ({ day: parseInt(w.day_number, 10), y: parseInt(w.estimated_1rm, 10) }))
-            .filter(p => !isNaN(p.day) && !isNaN(p.y) && p.day > 0 && p.y > 0);
+        this._guardWrite();
+        const result = await this.runProgram('OPTIMIZE_MODEL', { exercise });
+        const parsed = {};
+        (result.output || '').split('\n').forEach(line => {
+            const [key, value] = line.split('|');
+            if (key) parsed[key.trim()] = (value || '').trim();
+        });
 
-        const n = rows.length;
-        if (n < 2) return null;
+        const n = parseInt(parsed.n, 10);
+        if (!n || n < 2 || parsed.slope === undefined) return null;
 
-        let sx = 0, sy = 0, sxy = 0, sxx = 0;
-        for (const p of rows) { sx += p.day; sy += p.y; sxy += p.day * p.y; sxx += p.day * p.day; }
-
-        const denom = n * sxx - sx * sx;
-        if (denom === 0) return null;
-
-        const slope = (n * sxy - sx * sy) / denom;
-        const base = (sy - slope * sx) / n;
-
-        const yMean = sy / n;
-        let ssr = 0, tss = 0;
-        for (const p of rows) {
-            const pred = slope * p.day + base;
-            ssr += (p.y - pred) * (p.y - pred);
-            tss += (p.y - yMean) * (p.y - yMean);
-        }
-        const r_squared = tss > 0 ? Math.max(0, 1 - ssr / tss) : 1;
+        const slope = parseFloat(parsed.slope);
+        const base = parseFloat(parsed.base);
+        const r_squared = parseFloat(parsed.r_squared);
 
         const today = new Date().toISOString().slice(0, 10);
         await this.upsertRecord('models', 'exercise', {

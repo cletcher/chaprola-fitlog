@@ -120,6 +120,13 @@
             // Default date = today, in user's local timezone
             document.getElementById('date').valueAsDate = new Date();
 
+            // Pre-select exercise if arrived via ?exercise=<id> (dashboard
+            // empty-state cards link with this param; Vogel 2026-04-21).
+            const preselect = getUrlParam('exercise');
+            if (preselect && EXERCISES[preselect]) {
+                document.getElementById('exercise').value = preselect;
+            }
+
             const weightInput = document.getElementById('weight');
             const repsInput = document.getElementById('reps');
             const estimatePreview = document.getElementById('estimate-preview');

@@ -30,7 +30,12 @@
             <p class="subtitle">Fitted linear model: 1RM = slope × day + base</p>
         </header>
 
-        <div class="stats-grid">
+        <section id="empty-state" class="form-section" style="display:none; text-align:center;">
+            <p class="subtitle" style="margin-bottom: 1rem;">No data yet — log a set to start tracking.</p>
+            <a id="empty-log-link" href="./log.html" class="btn btn-primary">Log Your First Set →</a>
+        </section>
+
+        <div id="stats-grid" class="stats-grid">
             <div class="stat-card">
                 <span id="current-1rm" class="stat-value">--</span>
                 <span class="stat-unit" id="unit-1">lbs</span>
@@ -91,7 +96,7 @@
 
         <div class="quick-actions">
             <a id="history-link" href="#" class="btn btn-secondary">View Full History →</a>
-            <a href="./log.html" class="btn btn-primary" style="margin-left: 1rem;">Log Workout</a>
+            <a id="log-link" href="./log.html" class="btn btn-primary" style="margin-left: 1rem;">Log Workout</a>
         </div>
     </main>
 
@@ -109,6 +114,10 @@
                     headline: "Sign up to set a goal",
                     body: "Guests see HULDRA's fit over the sample data. Create a free account to set your own target weight + date and watch your projection hit it."
                 });
+                // Bottom Log Workout button is a write entry-point; drop it
+                // for guest (View Full History stays).
+                const logLink = document.getElementById('log-link');
+                if (logLink) logLink.remove();
             }
             document.getElementById('unit-1').textContent = unit;
             document.getElementById('unit-2').textContent = unit + '/day';
@@ -132,6 +141,21 @@
                     ]);
 
                     const workouts = workoutsData.records || [];
+
+                    // Brand-new user (no workouts for this exercise): zeros
+                    // render as a broken page. Show an empty-state card and
+                    // hide stats/chart/projections; goal section stays so
+                    // the user can set a target before their first set.
+                    if (workouts.length === 0) {
+                        document.getElementById('empty-log-link').href = `./log.html?exercise=${exerciseId}`;
+                        document.getElementById('empty-state').style.display = 'block';
+                        document.getElementById('stats-grid').style.display = 'none';
+                        document.querySelector('.chart-container').style.display = 'none';
+                        document.getElementById('projections').parentElement.style.display = 'none';
+                        loadGoals();
+                        return;
+                    }
+
                     slope = parseFloat(model?.param_a) || 0;
                     base = parseFloat(model?.param_b) || 0;
                     const r2 = parseFloat(model?.r_squared) || 0;
@@ -204,20 +228,26 @@
                     ? 'Goal may not be reachable at current slope.'
                     : `At current pace, you'll hit ${targetDisplay} ${unit} in ~${daysNeeded} days.`;
 
+                // Guest has no write permission — don't render Clear goal
+                // (click would trigger _guardWrite, no UI feedback). The goal
+                // summary reads cleanly without the button.
+                const clearBtn = isGuest ? '' : '<button id="goal-clear" class="btn btn-link">Clear goal</button>';
                 active.innerHTML = `
                     <div class="goal-summary">
                         <div><strong>${targetDisplay} ${esc(unit)}</strong> by <strong>${esc(targetDate)}</strong></div>
                         <div class="goal-sub">${esc(etaMsg)}</div>
                         <div class="goal-sub">Projected on that date: <strong>${FITLOG_API.toDisplay(projectedAtTarget, unit)} ${esc(unit)}</strong> ${badge}</div>
                     </div>
-                    <button id="goal-clear" class="btn btn-link">Clear goal</button>
+                    ${clearBtn}
                 `;
                 active.style.display = '';
 
-                document.getElementById('goal-clear').addEventListener('click', async () => {
-                    await FITLOG_API.deleteGoal(goal.goal_id.trim());
-                    loadGoals();
-                });
+                if (!isGuest) {
+                    document.getElementById('goal-clear').addEventListener('click', async () => {
+                        await FITLOG_API.deleteGoal(goal.goal_id.trim());
+                        loadGoals();
+                    });
+                }
             }
 
             document.getElementById('goal-form').addEventListener('submit', async (e) => {

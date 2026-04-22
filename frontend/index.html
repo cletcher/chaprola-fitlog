@@ -48,16 +48,28 @@
             { id: 'overhead_press', name: 'Overhead Press', icon: '🙌' }
         ];
 
-        async function loadWeeklySummary() {
+        async function loadWeeklySummary(mostRecentDate) {
             const el = document.getElementById('weekly-summary');
             try {
                 const res = await FITLOG_API.weeklySummary();
                 const count = (res.aggregates && res.aggregates.workout_id && res.aggregates.workout_id.count) || 0;
-                el.innerHTML = `<div class="weekly-card">
-                    <span class="weekly-label">Last 7 days</span>
-                    <span class="weekly-value">${count}</span>
-                    <span class="weekly-unit">${count === 1 ? 'set logged' : 'sets logged'}</span>
-                </div>`;
+                // count==0 is the common case for guest (sample data is months
+                // old) and for new users with prior-but-not-recent activity.
+                // Fall back to "Last logged" so the card is informative rather
+                // than a demotivating zero (Vogel 2026-04-21).
+                if (count === 0) {
+                    if (!mostRecentDate) return;
+                    el.innerHTML = `<div class="weekly-card">
+                        <span class="weekly-label">Last logged</span>
+                        <span class="weekly-value">${esc(mostRecentDate)}</span>
+                    </div>`;
+                } else {
+                    el.innerHTML = `<div class="weekly-card">
+                        <span class="weekly-label">Last 7 days</span>
+                        <span class="weekly-value">${count}</span>
+                        <span class="weekly-unit">${count === 1 ? 'set logged' : 'sets logged'}</span>
+                    </div>`;
+                }
                 el.style.display = '';
             } catch (err) {
                 // Silent fail — weekly summary is nice-to-have, not blocking
@@ -73,18 +85,17 @@
                 ]);
 
                 const workouts = workoutsData.records || [];
-                const allDays = workouts.map(w => parseInt(w.day_number, 10)).filter(n => !isNaN(n));
-                const currentDay = allDays.length ? Math.max(...allDays) : 1;
+                const mostRecentDate = workouts[0] ? workouts[0].date.trim() : null;
 
-                renderDashboard(modelsData.records || [], workouts, currentDay);
-                loadWeeklySummary();
+                renderDashboard(modelsData.records || [], workouts);
+                loadWeeklySummary(mostRecentDate);
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 document.getElementById('overview-loading').textContent = 'Error loading data. Please refresh the page.';
             }
         }
 
-        function renderDashboard(models, workouts, currentDay) {
+        function renderDashboard(models, workouts) {
             const grid = document.getElementById('overview-grid');
             const loading = document.getElementById('overview-loading');
             const unit = window.FITLOG_UNIT || 'lbs';
@@ -123,11 +134,18 @@
                     </div>
                 `;
 
+                // Current 1RM anchors to THIS exercise's latest session, not
+                // the global max across all exercises — a stale bench fit
+                // shouldn't pretend to have rolled forward just because the
+                // user squatted today (Vogel 2026-04-21).
+                const exerciseDays = recentWorkouts.map(w => parseInt(w.day_number, 10)).filter(n => !isNaN(n));
+                const exerciseDay = exerciseDays.length ? Math.max(...exerciseDays) : 1;
+
                 const slope = parseFloat(model.param_a) || 0;
                 const base = parseFloat(model.param_b) || 0;
                 const r2 = parseFloat(model.r_squared) || 0;
-                const current1RM = FITLOG_API.toDisplay(slope * currentDay + base, unit);
-                const projected30 = FITLOG_API.toDisplay(slope * (currentDay + 30) + base, unit);
+                const current1RM = FITLOG_API.toDisplay(slope * exerciseDay + base, unit);
+                const projected30 = FITLOG_API.toDisplay(slope * (exerciseDay + 30) + base, unit);
                 const weeklyGain = FITLOG_API.toDisplay(slope * 7, unit);
 
                 return `
